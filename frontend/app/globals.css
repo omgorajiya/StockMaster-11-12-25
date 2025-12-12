@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #f3f4f6;
+  --text-primary: #111827;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+}
+
+[data-theme='dark'] {
+  --app-bg: #0f172a;
+  --text-primary: #f8fafc;
+  --card-bg: #1f2937;
+  --card-border: #334155;
+}
+
+body {
+  color: var(--text-primary);
+  background-color: var(--app-bg);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Ensure form controls never inherit "white on white" */
+input,
+textarea,
+select {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+[data-theme='dark'] input,
+[data-theme='dark'] textarea,
+[data-theme='dark'] select {
+  color: #f8fafc;
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+[data-theme='dark'] .bg-white {
+  background-color: var(--card-bg) !important;
+  color: var(--text-primary);
+  border-color: var(--card-border);
+}
+
+[data-theme='dark'] .text-gray-900,
+[data-theme='dark'] .text-gray-800,
+[data-theme='dark'] .text-gray-700,
+[data-theme='dark'] .text-gray-600 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme='dark'] .bg-gray-50 {
+  background-color: #0f172a !important;
+}
+
+[data-theme='dark'] .hover\:bg-gray-50:hover {
+  background-color: rgb(12 74 110 / 0.4) !important;
+}
+
+.hover\:bg-gray-50:hover {
+  background-color: rgb(224 242 254 / var(--tw-bg-opacity, 1)) !important;
+}
+
+[data-theme='dark'] .adjustment-type-set {
+  background-color: rgba(236, 220, 252, 1) !important;
+  color: rgb(147 51 234 / var(--tw-text-opacity, 1)) !important;
+}
+
+[data-theme='dark'] .border-gray-200,
+[data-theme='dark'] .border-gray-100 {
+  border-color: var(--card-border) !important;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Mobile Responsive Utilities */
+@media (max-width: 640px) {
+  /* Ensure tables are scrollable on mobile */
+  .table-container {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+  }
+  
+  /* Better touch targets on mobile */
+  button, a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Prevent text from being too small */
+  body {
+    font-size: 16px;
+  }
+}

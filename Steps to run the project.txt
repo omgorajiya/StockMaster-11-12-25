@@ -1,0 +1,155 @@
+Step 1: Activate your Python virtual environment
+
+This ensures all your Python packages are isolated for this project.
+
+cd "D:\StockMaster project\backend"
+venv\Scripts\activate
+
+{	OUT-PUT:
+Microsoft Windows [Version 10.0.26200.7171]
+(c) Microsoft Corporation. All rights reserved.
+
+D:\StockMaster project\backend>venv\Scrpits\activate
+The system cannot find the path specified.
+
+D:\StockMaster project\backend>venv\Scripts\activate
+
+(venv) D:\StockMaster project\backend>	}
+
+
+You should see (venv) at the start of your terminal line.
+
+
+Step 2: Install all Python dependencies
+
+If you haven’t already or if you cloned a fresh repo:
+
+pip install -r requirements.txt
+
+
+Step 3: Apply migrations
+
+Django uses migrations to sync your models with the database. Run:
+
+python manage.py migrate
+
+{	OUT-PUT:
+(venv) D:\StockMaster project\backend>python manage.py migrate
+D:\StockMaster project\backend\venv\Lib\site-packages\rest_framework_simplejwt\__init__.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import DistributionNotFound, get_distribution
+Operations to perform:
+  Apply all migrations: accounts, admin, auth, contenttypes, operations, products, sessions
+Running migrations:
+  No migrations to apply.
+
+(venv) D:\StockMaster project\backend>	}
+
+
+✅ This ensures your SQLite database is up-to-date.
+
+
+Step 4: Run Django development server
+
+Start your backend server:
+
+python manage.py runserver
+
+{	OUT-PUT:
+
+(venv) D:\StockMaster project\backend>python manage.py runserver
+D:\StockMaster project\backend\venv\Lib\site-packages\rest_framework_simplejwt\__init__.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import DistributionNotFound, get_distribution
+D:\StockMaster project\backend\venv\Lib\site-packages\rest_framework_simplejwt\__init__.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import DistributionNotFound, get_distribution
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+November 26, 2025 - 13:22:19
+Django version 3.2.25, using settings 'stockmaster.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK		}
+
+
+The server runs at http://127.0.0.1:8000/
+
+You can open this in a browser to check it’s working.
+
+Leave this terminal open while working on the project.
+
+
+
+Step 5: Run your Next.js frontend
+
+Open another terminal, go to your frontend folder, e.g.,
+
+cd "D:\StockMaster project\frontend"
+npm install     # Only first time or if new dependencies are added
+
+{	OUT-PUT:
+Microsoft Windows [Version 10.0.26200.7171]
+(c) Microsoft Corporation. All rights reserved.
+
+D:\StockMaster project\frontend>npm install
+
+up to date, audited 421 packages in 3s
+
+140 packages are looking for funding
+  run `npm fund` for details
+
+1 critical severity vulnerability
+
+To address all issues, run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+
+D:\StockMaster project\frontend>	}
+
+npm run dev
+
+{	OUT-PUT:
+D:\StockMaster project\frontend>npm run dev
+
+> stockmaster-frontend@1.0.0 dev
+> next dev
+
+   ▲ Next.js 14.0.4
+   - Local:        http://localhost:3000
+   - Environments: .env.local
+
+ ✓ Ready in 2.6s	}
+
+
+This starts Next.js at http://localhost:3000/
+
+Now your frontend can talk to Django backend at http://127.0.0.1:8000/api/....
+
+
+Step 6: Check CORS (if frontend fails to fetch)
+
+In Django settings.py, make sure:
+
+INSTALLED_APPS = [
+    ...,
+    'corsheaders',
+    ...
+]
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    ...,
+]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+
+Step 7: Done!
+
+Open frontend: http://localhost:3000
+
+Open backend: http://127.0.0.1:8000
+ (for API check)
+
+Your project is now running smoothly!
