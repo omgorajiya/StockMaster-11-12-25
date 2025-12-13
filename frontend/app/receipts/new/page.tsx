@@ -24,7 +24,7 @@ export default function NewReceiptPage() {
     supplier: '',
     supplier_reference: '',
     notes: '',
-    status: 'draft' as const,
+    status: 'draft' as 'draft' | 'waiting' | 'ready',
   });
   const [error, setError] = useState('');
 

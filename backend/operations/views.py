@@ -597,7 +597,9 @@ class CycleCountTaskViewSet(viewsets.ModelViewSet):
         return CycleCountTaskSerializer
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # CycleCountTaskCreateSerializer sets created_by from request.user.
+        # Passing it here as well causes: "got multiple values for keyword argument 'created_by'".
+        serializer.save()
 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
@@ -772,7 +774,8 @@ class PickWaveViewSet(viewsets.ModelViewSet):
         return PickWaveSerializer
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # PickWaveCreateSerializer sets created_by from request.user.
+        serializer.save()
 
     @action(detail=True, methods=['post'])
     def start_picking(self, request, pk=None):

@@ -395,14 +395,26 @@ class CycleCountTaskCreateSerializer(serializers.ModelSerializer):
         from products.models import StockItem
         from decimal import Decimal
 
-        # Pop items list (may be missing or empty when using ABC mode).
+        # Pop items list (may be missing or empty).
         product_ids = validated_data.pop('items', []) or []
         method = validated_data.get('method', 'full')
+        warehouse = validated_data.get('warehouse')
+
+        if method == 'partial' and not product_ids:
+            raise serializers.ValidationError({'items': 'Select at least one product for partial cycle counts.'})
+
+        # If method is "full" and the client did not send products, default to
+        # all products that currently have StockItem rows in this warehouse.
+        if method == 'full' and not product_ids and warehouse is not None:
+            product_ids = list(
+                StockItem.objects.filter(warehouse=warehouse)
+                .values_list('product_id', flat=True)
+                .distinct()
+            )
 
         # If ABC-based method is selected and no explicit products were
         # provided, auto-select a focused set of high-value products for the
         # chosen warehouse.
-        warehouse = validated_data.get('warehouse')
         if method == 'abc' and not product_ids and warehouse is not None:
             product_ids = self._get_abc_product_ids_for_warehouse(warehouse)
 

@@ -27,7 +27,7 @@ export default function NewDeliveryPage() {
     customer_reference: '',
     shipping_address: '',
     notes: '',
-    status: 'draft' as const,
+    status: 'draft' as 'draft' | 'waiting' | 'ready',
   });
   const [error, setError] = useState('');
 
@@ -717,7 +717,7 @@ export default function NewDeliveryPage() {
                         >
                           <option value="">{formData.warehouse ? 'No Bin' : 'Select warehouse first'}</option>
                           {bins
-                            .filter(bin => !formData.warehouse || bin.warehouse === parseInt(formData.warehouse) || bin.warehouse_id === parseInt(formData.warehouse))
+                            .filter(bin => !formData.warehouse || bin.warehouse === parseInt(formData.warehouse))
                             .map((bin) => (
                               <option key={bin.id} value={bin.id}>
                                 {bin.code} {bin.description ? `- ${bin.description}` : ''}

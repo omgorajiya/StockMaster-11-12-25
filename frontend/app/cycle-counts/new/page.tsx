@@ -53,11 +53,13 @@ export default function NewCycleCountPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!formData.warehouse) {
       setError('Please select a warehouse');
       return;
     }
-    if (selectedProducts.length === 0) {
+
+    if (formData.method === 'partial' && selectedProducts.length === 0) {
       setError('Please select at least one product to count');
       return;
     }
@@ -67,38 +69,56 @@ export default function NewCycleCountPage() {
 
     try {
       await operationsService.createCycleCount({
-        warehouse: parseInt(formData.warehouse),
+        warehouse: parseInt(formData.warehouse, 10),
         scheduled_date: formData.scheduled_date || undefined,
         method: formData.method,
         notes: formData.notes || undefined,
-        items: selectedProducts,
+        ...(formData.method === 'partial' ? { items: selectedProducts } : {}),
       });
+
       const { showToast } = await import('@/lib/toast');
       showToast.success('Cycle count created successfully');
       router.push('/cycle-counts');
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to create cycle count';
-      if (err.response?.data) {
-        // Handle field-specific errors - properly serialize objects and arrays
+      const data = err?.response?.data;
+      const status = err?.response?.status;
+
+      // If Django returns an HTML error page (common when DEBUG=True), avoid
+      // treating it as an object and iterating over characters.
+      if (typeof data === 'string') {
+        const titleMatch = data.match(/<title>(.*?)<\/title>/i);
+        const title = titleMatch?.[1]?.trim();
+        setError(title ? `${title} (HTTP ${status ?? 'error'})` : `Server error (HTTP ${status ?? 'error'}) while creating cycle count`);
+        return;
+      }
+
+      const errorMessage =
+        data?.error ||
+        data?.message ||
+        err?.message ||
+        'Failed to create cycle count';
+
+      if (data && typeof data === 'object') {
         const formatErrorValue = (value: any): string => {
           if (value === null || value === undefined) return '';
           if (typeof value === 'string') return value;
           if (typeof value === 'number' || typeof value === 'boolean') return String(value);
           if (Array.isArray(value)) {
-            // Handle array of strings or array of objects
-            return value.map((v, idx) => {
-              if (typeof v === 'string') return v;
-              if (typeof v === 'object' && v !== null) {
-                const objStr = Object.entries(v)
-                  .map(([k, val]) => {
-                    if (Array.isArray(val)) return `${k}: ${val.join(', ')}`;
-                    return `${k}: ${String(val)}`;
-                  })
-                  .join('; ');
-                return `Item ${idx + 1}: ${objStr}`;
-              }
-              return String(v);
-            }).join(' | ');
+            return value
+              .map((v, idx) => {
+                if (typeof v === 'string') return v;
+                if (typeof v === 'object' && v !== null) {
+                  const objStr = Object.entries(v)
+                    .map(([k, val]) => {
+                      if (Array.isArray(val)) return `${k}: ${val.join(', ')}`;
+                      return `${k}: ${String(val)}`;
+                    })
+                    .join('; ');
+                  return `Item ${idx + 1}: ${objStr}`;
+                }
+                return String(v);
+              })
+              .join(' | ');
           }
           if (typeof value === 'object' && value !== null) {
             return Object.entries(value)
@@ -110,15 +130,16 @@ export default function NewCycleCountPage() {
           }
           return String(value);
         };
-        
-        const fieldErrors = Object.entries(err.response.data)
+
+        const fieldErrors = Object.entries(data)
           .filter(([key]) => key !== 'error' && key !== 'message')
           .map(([key, value]) => {
             const formatted = formatErrorValue(value);
             return formatted ? `${key}: ${formatted}` : key;
           })
-          .filter(msg => msg.length > 0)
+          .filter((msg) => msg.length > 0)
           .join('; ');
+
         setError(fieldErrors || errorMessage);
       } else {
         setError(errorMessage);
@@ -171,7 +192,14 @@ export default function NewCycleCountPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">Method *</label>
               <select
                 value={formData.method}
-                onChange={(e) => setFormData({ ...formData, method: e.target.value as any })}
+                onChange={(e) => {
+                  const nextMethod = e.target.value as any;
+                  setFormData({ ...formData, method: nextMethod });
+                  // Product selection is only meaningful for partial counts.
+                  if (nextMethod !== 'partial') {
+                    setSelectedProducts([]);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
                 <option value="full">Full Count - Count all products</option>
@@ -206,51 +234,62 @@ export default function NewCycleCountPage() {
             </div>
           </div>
 
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Select Products to Count</h2>
-            <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
-              {products.length === 0 ? (
-                <p className="text-gray-500 text-center py-6">No products found.</p>
-              ) : (
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-3 text-left">
-                        <span className="sr-only">Select</span>
-                      </th>
-                      <th className="p-3 text-left font-medium text-gray-700">Name</th>
-                      <th className="p-3 text-left font-medium text-gray-700">SKU</th>
-                      <th className="p-3 text-left font-medium text-gray-700">Category</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((product) => {
-                      const checked = selectedProducts.includes(product.id);
-                      return (
-                        <tr
-                          key={product.id}
-                          className="border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => toggleProductSelection(product.id)}
-                        >
-                          <td className="p-3">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleProductSelection(product.id)}
-                              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                            />
-                          </td>
-                          <td className="p-3 text-gray-900">{product.name}</td>
-                          <td className="p-3 text-gray-600">{product.sku}</td>
-                          <td className="p-3 text-gray-600">{product.category_name || '-'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+          {formData.method === 'partial' ? (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Select Products to Count</h2>
+              <p className="text-xs text-gray-500 mb-4">
+                Partial counts require selecting the specific products to count.
+              </p>
+              <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
+                {products.length === 0 ? (
+                  <p className="text-gray-500 text-center py-6">No products found.</p>
+                ) : (
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="p-3 text-left">
+                          <span className="sr-only">Select</span>
+                        </th>
+                        <th className="p-3 text-left font-medium text-gray-700">Name</th>
+                        <th className="p-3 text-left font-medium text-gray-700">SKU</th>
+                        <th className="p-3 text-left font-medium text-gray-700">Category</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.map((product) => {
+                        const checked = selectedProducts.includes(product.id);
+                        return (
+                          <tr
+                            key={product.id}
+                            className="border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => toggleProductSelection(product.id)}
+                          >
+                            <td className="p-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleProductSelection(product.id)}
+                                className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                              />
+                            </td>
+                            <td className="p-3 text-gray-900">{product.name}</td>
+                            <td className="p-3 text-gray-600">{product.sku}</td>
+                            <td className="p-3 text-gray-600">{product.category_name || '-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              {formData.method === 'full'
+                ? 'Full counts will automatically include all products with stock in the selected warehouse.'
+                : 'ABC counts will automatically include a focused set of high-value products in the selected warehouse.'}
+            </div>
+          )}
 
           <div className="flex gap-4">
             <button

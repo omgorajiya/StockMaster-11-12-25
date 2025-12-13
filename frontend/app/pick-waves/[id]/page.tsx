@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { operationsService, PickWave, DeliveryOrder, DeliveryItem } from '@/lib/operations';
 import { showToast } from '@/lib/toast';
-import { Calendar, User, Package, CheckCircle, Play, Check } from 'lucide-react';
+import { Play, Check } from 'lucide-react';
 
 interface PickListRow {
   productId: number;
@@ -39,9 +39,8 @@ export default function PickWaveDetailPage() {
 
       // Load delivery orders for this wave (filtered by pick_waves via backend)
       const ordersData = await operationsService.getDeliveries({
-        // @ts-expect-error: pick_waves is supported by the backend filterset
         pick_waves: parseInt(params.id as string, 10),
-      } as any);
+      });
       const orders = ordersData.results || ordersData;
       setDeliveryOrders(orders);
 
@@ -215,40 +214,42 @@ export default function PickWaveDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Delivery Orders</h2>
-            {deliveryOrders.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No delivery orders in this pick wave
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-3 text-sm font-medium text-gray-700">Document #</th>
-                      <th className="text-left p-3 text-sm font-medium text-gray-700">Customer</th>
-                      <th className="text-left p-3 text-sm font-medium text-gray-700">Items</th>
-                      <th className="text-left p-3 text-sm font-medium text-gray-700">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {deliveryOrders.map((order) => (
-                      <tr key={order.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3 font-medium text-primary-600">
-                          {order.document_number}
-                        </td>
-                        <td className="p-3">{order.customer}</td>
-                        <td className="p-3">{order.items?.length || 0}</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-1 text-xs rounded ${getStatusBadgeClasses(order.status)}`}>
-                            {order.status}
-                          </span>
-                        </td>
+              {deliveryOrders.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No delivery orders in this pick wave
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-3 text-sm font-medium text-gray-700">Document #</th>
+                        <th className="text-left p-3 text-sm font-medium text-gray-700">Customer</th>
+                        <th className="text-left p-3 text-sm font-medium text-gray-700">Items</th>
+                        <th className="text-left p-3 text-sm font-medium text-gray-700">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody>
+                      {deliveryOrders.map((order) => (
+                        <tr key={order.id} className="border-b hover:bg-gray-50">
+                          <td className="p-3 font-medium text-primary-600">
+                            {order.document_number}
+                          </td>
+                          <td className="p-3">{order.customer}</td>
+                          <td className="p-3">{order.items?.length || 0}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 text-xs rounded ${getStatusBadgeClasses(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Consolidated Pick List</h2>
               {pickList.length === 0 ? (

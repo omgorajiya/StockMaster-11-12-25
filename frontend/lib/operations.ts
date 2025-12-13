@@ -277,6 +277,8 @@ export const operationsService = {
   async getDeliveries(params?: {
     status?: DocumentStatus;
     warehouse?: number;
+    // Backend supports filtering deliveries by pick wave membership.
+    pick_waves?: number;
     search?: string;
     page?: number;
   }): Promise<{ results: DeliveryOrder[]; count: number }> {
@@ -398,7 +400,7 @@ export const operationsService = {
     scheduled_date?: string;
     method: 'full' | 'partial' | 'abc';
     notes?: string;
-    items: number[]; // product IDs
+    items?: number[]; // product IDs (required for partial, optional for full/abc)
   }): Promise<CycleCountTask> {
     const response = await api.post('/operations/cycle-counts/', data);
     return response.data;

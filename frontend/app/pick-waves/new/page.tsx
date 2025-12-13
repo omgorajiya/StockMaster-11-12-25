@@ -6,7 +6,7 @@ import Layout from '@/components/Layout';
 import { operationsService } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
 import { showToast } from '@/lib/toast';
-import { Plus, Calendar, Filter } from 'lucide-react';
+import { Filter } from 'lucide-react';
 
 export default function NewPickWavePage() {
   const router = useRouter();
@@ -33,26 +33,60 @@ export default function NewPickWavePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!warehouseFilter) {
+      showToast.error('Please select a warehouse for the pick wave');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const response = await operationsService.generatePickWave({
         name: waveName || undefined,
-        warehouse: warehouseFilter ? parseInt(warehouseFilter) : undefined,
+        warehouse: parseInt(warehouseFilter, 10),
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
-        status: 'ready'
+        status: 'ready',
       });
 
       if (response.success) {
         showToast.success('Pick wave created successfully');
         router.push(`/pick-waves/${response.pick_wave.id}`);
-      } else {
-        showToast.error(response.message || 'Failed to create pick wave');
+        return;
       }
-    } catch (error) {
-      console.error('Failed to create pick wave:', error);
+
       showToast.error('Failed to create pick wave');
+    } catch (err: any) {
+      const data = err?.response?.data;
+      const status = err?.response?.status;
+
+      if (typeof data === 'string') {
+        const titleMatch = data.match(/<title>(.*?)<\/title>/i);
+        const title = titleMatch?.[1]?.trim();
+        showToast.error(title ? `${title} (HTTP ${status ?? 'error'})` : 'Server error while creating pick wave');
+        return;
+      }
+
+      const message = data?.message || data?.detail || data?.error || err?.message || 'Failed to create pick wave';
+
+      // Common failure: no delivery orders match the filters. Offer to create an
+      // empty wave so the UI remains usable.
+      if (status === 400 && typeof message === 'string' && message.toLowerCase().includes('no matching')) {
+        const ok = confirm(`${message}\n\nCreate an empty pick wave instead?`);
+        if (ok) {
+          const wave = await operationsService.createPickWave({
+            name: waveName || `Wave ${new Date().toLocaleString()}`,
+            warehouse: parseInt(warehouseFilter, 10),
+            status: 'planned',
+          });
+          showToast.success('Empty pick wave created');
+          router.push(`/pick-waves/${wave.id}`);
+          return;
+        }
+      }
+
+      showToast.error(message);
     } finally {
       setLoading(false);
     }
@@ -92,7 +126,7 @@ export default function NewPickWavePage() {
                   onChange={(e) => setWarehouseFilter(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200"
                 >
-                  <option value="">All Warehouses</option>
+                  <option value="">Select Warehouse</option>
                   {warehouses.map((wh) => (
                     <option key={wh.id} value={wh.id}>
                       {wh.name} ({wh.code})

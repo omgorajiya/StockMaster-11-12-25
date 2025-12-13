@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
-import { operationsService, PickWave, DocumentStatus } from '@/lib/operations';
+import { operationsService, PickWave } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, Calendar, GitMerge } from 'lucide-react';
+import { Plus, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 
 export default function PickWavesPage() {
   const [pickWaves, setPickWaves] = useState<PickWave[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<DocumentStatus | ''>('');
+  const [statusFilter, setStatusFilter] = useState<PickWave['status'] | ''>('');
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
@@ -46,13 +46,13 @@ export default function PickWavesPage() {
     }
   };
 
-  const getStatusBadgeClasses = (status: DocumentStatus) => {
+  const getStatusBadgeClasses = (status: PickWave['status']) => {
     switch (status) {
-      case 'done':
+      case 'completed':
         return 'bg-green-100 text-green-800';
-      case 'ready':
+      case 'picking':
         return 'bg-blue-100 text-blue-800';
-      case 'waiting':
+      case 'planned':
         return 'bg-yellow-100 text-yellow-800';
       case 'canceled':
         return 'bg-red-100 text-red-800';
@@ -79,7 +79,7 @@ export default function PickWavesPage() {
           <div className="flex flex-wrap items-center gap-4 mb-6">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as DocumentStatus | '')}
+              onChange={(e) => setStatusFilter(e.target.value as PickWave['status'] | '')}
               className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Status</option>

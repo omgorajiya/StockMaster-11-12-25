@@ -4,218 +4,113 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Key commands
 
-### Backend (Django REST API)
-
-All backend commands are run from `backend/` with the virtualenv activated.
-
-- Create and activate virtualenv (Windows PowerShell)
-  - `python -m venv venv`
-  - `./venv/Scripts/Activate.ps1`
-- Install dependencies
-  - `pip install -r requirements.txt`
-- Apply migrations
-  - `python manage.py makemigrations`
-  - `python manage.py migrate`
-- Run development server (default: http://localhost:8000)
-  - `python manage.py runserver`
-  - To change port: `python manage.py runserver 8001`
-- Run all tests
-  - `python manage.py test`
-- Run tests for a single app
-  - `python manage.py test accounts`
-  - `python manage.py test operations`
-- Run a single test case or method (pattern)
-  - `python manage.py test operations.tests.test_receipts.ReceiptValidationTests`
-  - `python manage.py test operations.tests.test_receipts.ReceiptValidationTests.test_validate_receipt_updates_stock`
-
 ### Frontend (Next.js 14, TypeScript)
 
 All frontend commands are run from `frontend/`.
 
-- Install dependencies
-  - `npm install`
-- Run development server (default: http://localhost:3000)
-  - `npm run dev`
-  - To change port: `npm run dev -- -p 3001`
-- Build production bundle
-  - `npm run build`
-- Run production server
-  - `npm run start`
-- Lint TypeScript/Next.js code
-  - `npm run lint`
+- Install dependencies: `npm install`
+- Run dev server (default http://localhost:3000): `npm run dev`
+  - Change port: `npm run dev -- -p 3001`
+- Lint: `npm run lint`
+- Build: `npm run build`
+- Run prod server: `npm run start`
 
-No JavaScript/TypeScript test runner is configured in `package.json`; add one (e.g. Jest/RTL) if you need frontend tests.
+Cache reset (useful after dependency/import issues; see `frontend/ICON_FIX.md`):
+- PowerShell: `Remove-Item -Recurse -Force .next; npm run dev`
+- bash: `rm -rf .next && npm run dev`
+
+No JavaScript/TypeScript test runner is configured in `frontend/package.json` (no `test` script).
+
+### Backend (Django REST API)
+
+All backend commands are run from `backend/` with the virtualenv activated.
+
+- Create venv: `python -m venv venv`
+- Activate (Windows PowerShell): `./venv/Scripts/Activate.ps1`
+- Install deps: `pip install -r requirements.txt`
+- Migrations: `python manage.py makemigrations` then `python manage.py migrate`
+- Run dev server (default http://localhost:8000): `python manage.py runserver`
+- Run all tests: `python manage.py test`
+- Run tests for a single app: `python manage.py test operations`
+- Run a single test: `python manage.py test operations.tests.test_receipts.ReceiptValidationTests.test_validate_receipt_updates_stock`
 
 ### Flask reporting service (optional)
 
 All Flask commands are run from `flask-service/`.
 
-- Create and activate virtualenv
-  - `python -m venv venv`
-  - Windows: `./venv/Scripts/activate`
-  - macOS/Linux: `source venv/bin/activate`
-- Install dependencies
-  - `pip install -r requirements.txt`
-- Run service (default: http://localhost:5000)
-  - `python app.py`
-
-### Typical multi-service dev workflow
-
-In three terminals, after MongoDB is running:
-
-1. Backend: `cd backend && ./venv/Scripts/Activate.ps1 && python manage.py runserver`
-2. Frontend: `cd frontend && npm run dev`
-3. Optional Flask: `cd flask-service && venv/Scripts/activate && python app.py`
+- Create venv: `python -m venv venv`
+- Activate (Windows): `./venv/Scripts/activate`
+- Install deps: `pip install -r requirements.txt`
+- Run service (default http://localhost:5000): `python app.py`
 
 ## Environment and configuration
 
-Key environment files (see `README.md`, `RUN_PROJECT.md`, `QUICK_START_GUIDE.md`, `SETUP.md` for full details):
-
-- `backend/.env`
-  - `SECRET_KEY`
-  - `DEBUG`
-  - `DB_NAME`
-  - `MONGODB_URI` (not used by the current SQLite-based Django settings)
-  - `JWT_SECRET_KEY`
 - `frontend/.env.local`
-  - `NEXT_PUBLIC_API_URL` (typically `http://localhost:8000/api`)
+  - `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000/api` via `frontend/next.config.js`)
+- `backend/.env`
+  - `SECRET_KEY`, `DEBUG`, etc.
 - `flask-service/.env`
-  - `MONGODB_URI` (e.g. `mongodb://localhost:27017/`)
-  - `DB_NAME` (e.g. `stockmaster`)
-  - `FLASK_ENV`
-  - `FLASK_PORT`
+  - `MONGODB_URI`, `DB_NAME`, `FLASK_PORT`, etc.
 
 ### Database note (SQLite vs MongoDB)
 
-The documentation in `README.md` describes MongoDB as the primary database, but `backend/stockmaster/settings.py` is currently configured to use SQLite via Django's default `sqlite3` engine. The Flask microservice still connects directly to MongoDB and expects collections like `products`, `products_stockitem`, and `operations_stockledger`.
-
-When modifying persistence logic, be aware of this split:
-
-- Django REST API reads/writes through the ORM to SQLite by default.
-- Flask reporting service reads from MongoDB directly using `pymongo`.
-
-If you re-enable MongoDB for Django, you will need to update `DATABASES` in `settings.py` and ensure collections remain compatible with the Flask reports.
+`backend/stockmaster/settings.py` is currently configured to use SQLite (`django.db.backends.sqlite3`) even though the top-level `README.md` describes MongoDB. The optional Flask service still connects directly to MongoDB using `pymongo`.
 
 ## High-level architecture
 
 ### System overview
 
-StockMaster is an inventory management system composed of three main parts:
+StockMaster is split into:
 
-- **Next.js 14 frontend (`frontend/`)** – App Router–based UI (TypeScript, Tailwind) for authentication, dashboards, product and operations workflows.
-- **Django REST API (`backend/`)** – Core domain and business logic for accounts, products, stock operations, dashboard analytics, and notifications, exposed under `/api/...`.
-- **Flask microservice (`flask-service/`)** – Optional reporting service that reads from MongoDB and exposes reporting/export endpoints under `/api/reports/...` plus `/health`.
+- `frontend/`: Next.js 14 App Router UI (TypeScript + Tailwind)
+- `backend/`: Django REST API (DRF + SimpleJWT)
+- `flask-service/`: optional reporting service (Flask + MongoDB)
 
-All user-facing flows go through the Next.js app, which talks to the Django API via `frontend/lib/*.ts` service modules. The Flask service is used only for supplementary reporting and exports.
+The frontend talks to the Django API under `/api/...`. Some reports may be served by the Flask service.
 
-### Backend Django apps
+### Frontend structure (`frontend/`)
 
-The Django project `stockmaster` is split into several domain-focused apps, each with its own `models.py`, `serializers.py`, `urls.py`, and `views.py`.
+- Next.js App Router routes live in `frontend/app/`. The root route `app/page.tsx` redirects to `/dashboard` vs `/login` based on whether an `access_token` exists in `localStorage`.
+- Most pages are client components (`'use client'`) and wrap content with `components/Layout.tsx` (sidebar + top bar + notification bell + theme toggle).
+- `frontend/lib/api.ts` is the shared Axios client:
+  - Base URL comes from `NEXT_PUBLIC_API_URL`.
+  - Request interceptor injects `Authorization: Bearer <access_token>` from `localStorage`.
+  - Response interceptor attempts token refresh via `POST /api/token/refresh/` and redirects to `/login` if refresh fails.
+- TypeScript import alias: `@/*` maps to the `frontend/` root (see `frontend/tsconfig.json`).
 
-- **`accounts/`** – Custom user model and authentication flows.
-  - Exposes endpoints under `/api/auth/` (see `backend/accounts/urls.py`).
-  - `views.py` provides:
-    - Registration and login that issue JWT access/refresh tokens via `rest_framework_simplejwt`.
-    - Password reset via OTP: `OTP` model instances are created, logged (for now), and then used to validate password reset requests.
-    - Profile retrieval and update (`/profile/`, `/profile/update/`).
-  - `AUTH_USER_MODEL` is set to `accounts.User` in `settings.py`; always use `get_user_model()` or `settings.AUTH_USER_MODEL` when referencing users.
+Key “service layer” modules (thin API wrappers used by pages/components):
 
-- **`products/`** – Core catalog and stock master data.
-  - Key models in `products/models.py`:
-    - `Category` – Product categories.
-    - `Warehouse` – Physical locations where stock is stored.
-    - `Product` – SKU, barcode, unit of measure, reorder levels/quantities, and helpers like `get_total_stock()` and `is_low_stock()`.
-    - `StockItem` – Per-warehouse stock quantities and reserved quantities; `available_quantity()` is the canonical way to know free stock.
-    - `Supplier`, `ProductSupplier`, `SupplierPerformance` – Vendor and performance tracking (pricing, lead times, on-time ratios, etc.).
-  - The `StockItem` model underpins all stock movement logic in `operations/` and analytics in `dashboard/`.
+- `frontend/lib/auth.ts` → `/api/auth/*`
+- `frontend/lib/products.ts` and `frontend/lib/suppliers.ts` → `/api/products/*`
+- `frontend/lib/operations.ts` → `/api/operations/*`
+  - Documents: receipts, deliveries, transfers, adjustments, returns, cycle counts, pick waves
+  - Collaboration + audit: approvals, comments, attachments, saved views, audit logs
+- `frontend/lib/dashboard.ts` and `frontend/lib/analytics.ts` → `/api/dashboard/*`
+- `frontend/lib/notifications.ts` → `/api/notifications/*` (including job status + manual triggers)
+- `frontend/lib/integrations.ts` → `/api/integrations/*` (webhook configs + delivery events)
 
-- **`operations/`** – All stock movement documents and the stock ledger.
-  - `models.py` defines an abstract `BaseDocument` with common fields (status, warehouse, created_by, timestamps) and concrete document types:
-    - `Receipt` – Incoming stock from suppliers (`validate_and_complete()` increases `StockItem.quantity`).
-    - `DeliveryOrder` – Outgoing stock to customers (`validate_and_complete()` checks `available_quantity()` and decrements stock).
-    - `InternalTransfer` – Moves stock between warehouses, decrementing one `StockItem` and incrementing another.
-    - `StockAdjustment` – Corrects discrepancies; `adjustment_type` (`increase`, `decrease`, `set`) controls how `StockItem.quantity` is modified.
-  - Each document has an associated `*Item` model (`ReceiptItem`, `DeliveryItem`, `TransferItem`, `AdjustmentItem`) with quantities and optional pricing/notes.
-  - `StockLedger` records an audit trail of movements per product/warehouse with indices optimized for querying by product and time. Ledger rows are designed to be written whenever a document is validated and completed.
-  - Document status transitions follow the same workflow used in the UI and docs: `draft → waiting → ready → done` (or `canceled`). Validation methods enforce `status == 'ready'` before applying changes.
+Cross-cutting UI patterns:
 
-- **`dashboard/`** – Aggregated inventory analytics.
-  - `views.py` exposes several endpoints (all `IsAuthenticated`):
-    - `dashboard_kpis` – Counts total products, low stock and out-of-stock items, pending receipts/deliveries/transfers. Uses aggregated `StockItem` quantities plus `Product.reorder_level`.
-    - `recent_activities` – Merges recent `Receipt`, `DeliveryOrder`, and `InternalTransfer` documents into a sorted feed for the dashboard.
-    - `low_stock_products` – Returns a detailed list of products at or below reorder level.
-    - `abc_analysis`, `inventory_turnover`, `analytics_dashboard` – Higher-level analytics based on `ReceiptItem` prices, `DeliveryItem` quantities, and aggregated `StockItem` balances.
-  - These endpoints assume `operations` and `products` have consistent data; changes to model fields in those apps often require updates here.
+- Saved filters/views: `components/SavedViewToolbar.tsx` stores per-page filters using the Operations “saved views” endpoints (`page_key` is the join key).
+- Collaboration panel: `components/DocumentCollaborationPanel.tsx` shows per-document comments + attachments via Operations endpoints.
 
-- **`notifications/`** – In-app notification system.
-  - `Notification` model stores user-scoped alerts with type, priority, and optional references to related objects (e.g., low stock on a product or pending approvals).
-  - `NotificationPreference` stores per-user delivery and quiet-hours preferences and per-type enable flags.
-  - `NotificationViewSet` and `NotificationPreferenceViewSet` provide CRUD plus custom actions:
-    - Mark single notification as read, mark all as read, get unread count.
-  - Frontend integrates via `frontend/lib/notifications.ts` and components like `NotificationBell`.
+### Backend structure (`backend/`)
 
-- **Project configuration (`stockmaster/`)**
-  - `settings.py` wires up installed apps, REST framework config, JWT lifetimes, CORS origins, and `AUTH_USER_MODEL`.
-  - `urls.py` mounts each app under a versionless `/api/...` prefix:
-    - `/api/auth/`, `/api/products/`, `/api/operations/`, `/api/dashboard/`, `/api/notifications/` and `/api/token/refresh/`.
+`backend/stockmaster/urls.py` mounts the main API routers:
 
-### Frontend Next.js app
+- `/api/auth/` → `accounts`
+- `/api/products/` → `products`
+- `/api/operations/` → `operations`
+- `/api/dashboard/` → `dashboard`
+- `/api/notifications/` → `notifications`
+- `/api/integrations/` → `integrations`
+- `/api/token/refresh/` → SimpleJWT refresh endpoint
 
-The frontend uses the Next.js App Router (`frontend/app/`) and a thin service layer in `frontend/lib/` to talk to the Django API.
+Important cross-app concepts:
 
-- **Global setup**
-  - `app/layout.tsx` sets base metadata and wraps the app in `Providers`, which in turn applies an `ErrorBoundary` and configures `react-hot-toast`.
-  - `lib/api.ts` configures an Axios instance with base URL `NEXT_PUBLIC_API_URL` and JSON headers, adds a request interceptor to inject the JWT access token from `localStorage`, and a response interceptor to refresh the token via `/api/token/refresh/` on 401s.
-
-- **Auth flows**
-  - `lib/auth.ts` maps directly to `accounts` endpoints:
-    - `authService.register` → `POST /api/auth/register/`.
-    - `authService.login` → `POST /api/auth/login/`.
-    - Password reset via OTP (`/api/auth/password-reset/` and `/api/auth/password-reset/verify/`).
-    - Profile operations via `/api/auth/profile/` and `/api/auth/profile/update/`.
-  - Tokens are stored in `localStorage` and used by `lib/api.ts` interceptors.
-
-- **Domain-specific service modules**
-  - `lib/products.ts` – Wraps product, category, warehouse, and stock endpoints (`/api/products/...`). It standardizes TypeScript interfaces (`Product`, `Category`, `Warehouse`, `StockItem`) and hides pagination details.
-  - `lib/operations.ts` – Wraps operations endpoints (`/api/operations/...`) and encodes document types (`Receipt`, `DeliveryOrder`, `InternalTransfer`, `StockAdjustment`) and their item shapes. It also exposes explicit `validate*` methods that call the `.../validate/` actions, aligning with the `validate_and_complete` methods on the Django models.
-  - `lib/dashboard.ts` – Maps to dashboard analytics endpoints (`/api/dashboard/kpis/`, `/recent-activities/`, `/low-stock/`).
-  - `lib/notifications.ts` – Talks to `/api/notifications/notifications/...` for list, unread counts, and mark-read operations.
-  - `lib/suppliers.ts` – Wraps supplier CRUD and product-supplier relations under `/api/products/suppliers/` and `/api/products/product-suppliers/...`.
-
-- **Routing and pages**
-  - The `app/` directory mirrors domain concepts:
-    - `app/login`, `app/register`, `app/forgot-password` – Auth flows.
-    - `app/dashboard`, `app/analytics`, `app/history` – Main dashboard and analytics views using `dashboardService` and operations history.
-    - `app/products`, `app/products/new`, `app/products/[id]/edit` – Product listing and maintenance.
-    - `app/receipts`, `app/receipts/new`, `app/deliveries`, `app/deliveries/new`, `app/transfers`, `app/transfers/new`, `app/adjustments`, `app/adjustments/new` – CRUD and validation flows for each document type.
-    - `app/suppliers`, `app/settings`, `app/profile` – Supplier and configuration views.
-  - Shared components such as `Layout`, `NotificationBell`, `BarcodeScanner`, and `ErrorBoundary` provide navigation, alerts, and utility UI.
-
-When adding new API endpoints, the typical pattern is:
-
-1. Implement the Django view/serializer/URL under the appropriate app.
-2. Add a thin wrapper in `frontend/lib/*.ts` exposing typed functions.
-3. Consume those wrappers in the relevant `app/.../page.tsx` components.
-
-### Flask reporting microservice
-
-The Flask service in `flask-service/app.py` is a standalone microservice that speaks directly to MongoDB via `pymongo`.
-
-- Uses `MONGODB_URI` and `DB_NAME` from `.env` to connect.
-- Endpoints:
-  - `/health` – Simple health check.
-  - `/api/reports/stock-summary` – Summaries over `products` and `products_stockitem` collections (low stock, out of stock, totals).
-  - `/api/reports/movement-history` – Filterable read from `operations_stockledger` (by warehouse, product, date range).
-  - `/api/reports/export-excel` – Generates an in-memory Excel file using `pandas` and `openpyxl` with stock overview data.
-  - `/api/reports/low-stock-alert` – Returns low stock alerts similar to the Django dashboard but backed by MongoDB collections.
-
-This service assumes a background process or separate integration keeps MongoDB collections in sync with the primary inventory data. If you change the schema of Django models like `Product`, `StockItem`, or `StockLedger`, you likely need to adapt both the synchronization logic (wherever it lives) and these report queries.
-
-## How to extend the system safely
-
-- Favor adding or reusing high-level operations methods (`validate_and_complete` on documents, `available_quantity` on `StockItem`) instead of duplicating stock math in new code paths.
-- Any change to stock-related models (`Product`, `StockItem`, `Receipt*`, `Delivery*`, `Transfer*`, `StockAdjustment*`, `StockLedger`) typically impacts:
-  - Dashboard analytics (`dashboard/views.py`).
-  - Frontend service types in `frontend/lib/operations.ts`, `frontend/lib/products.ts`, and dashboard-related code.
-  - MongoDB-backed reporting in `flask-service/app.py` if those collections mirror ORM models.
-- Keep JWT and CORS settings in `backend/stockmaster/settings.py` aligned with how the Next.js app is served (ports, hostnames) so that `NEXT_PUBLIC_API_URL` and `CORS_ALLOWED_ORIGINS` remain consistent.
+- **Document workflow**: many operations documents use `status` values like `draft → waiting → ready → done` (and `canceled`). Frontend “Validate” buttons call `POST .../validate/` actions.
+- **Stock ledger**: operations validation writes `StockLedger` entries; the UI queries `/api/operations/ledger/` (see `frontend/lib/ledger.ts`).
+- **Audit + collaboration** (Operations): comments, attachments, approvals, saved views, and audit logs are all served under `/api/operations/*`.
+  - Attachments are uploaded as multipart form data; files are stored under `MEDIA_ROOT` and served at `/media/` in dev.
+- **Integrations/webhooks**: `integrations` app manages outbound webhooks (`/api/integrations/webhooks/`) and delivery events (`/api/integrations/events/`). Operations emits events (e.g. `receipt_completed`, `stock_change`) as part of validation.
+- **Notifications**: `/api/notifications/notifications/*` for user notifications; `/api/notifications/jobs/*` exposes job status and allows privileged users to trigger jobs via `POST /run/`.

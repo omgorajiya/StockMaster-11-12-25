@@ -23,7 +23,7 @@ export default function NewTransferPage() {
     warehouse: '',
     to_warehouse: '',
     notes: '',
-    status: 'draft' as const,
+    status: 'draft' as 'draft' | 'waiting' | 'ready',
   });
   const [error, setError] = useState('');
 

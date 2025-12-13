@@ -19,7 +19,7 @@ export default function NewReturnPage() {
     reason: '',
     disposition: 'restock' as 'restock' | 'scrap' | 'repair',
     notes: '',
-    status: 'draft' as const,
+    status: 'draft' as 'draft' | 'waiting' | 'ready',
   });
   const [error, setError] = useState('');
 

@@ -36,7 +36,7 @@ export default function NewAdjustmentPage() {
     reason: '',
     adjustment_type: 'set' as 'increase' | 'decrease' | 'set',
     notes: '',
-    status: 'draft' as const,
+    status: 'draft' as 'draft' | 'waiting' | 'ready',
   });
   const [error, setError] = useState('');
 
