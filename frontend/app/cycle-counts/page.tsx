@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { operationsService, CycleCountTask, DocumentStatus } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, Calendar, ClipboardList } from 'lucide-react';
+import { Plus, Calendar, ClipboardList, Pencil } from 'lucide-react';
+import StatusEditModal from '@/components/StatusEditModal';
 import Link from 'next/link';
 
 export default function CycleCountsPage() {
@@ -14,6 +14,16 @@ export default function CycleCountsPage() {
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   const [scheduledDateFilter, setScheduledDateFilter] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [editDoc, setEditDoc] = useState<{ id: number; number: string; status: string } | null>(null);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  const statusOptions = [
+    { value: 'draft', label: 'Draft' },
+    { value: 'waiting', label: 'Waiting' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'done', label: 'Done' },
+    { value: 'canceled', label: 'Canceled' },
+  ];
 
   useEffect(() => {
     loadWarehouses();
@@ -48,6 +58,24 @@ export default function CycleCountsPage() {
     }
   };
 
+  const handleSaveStatus = async (newStatus: string) => {
+    if (!editDoc) return;
+
+    setSavingStatus(true);
+    try {
+      await operationsService.updateCycleCount(editDoc.id, { status: newStatus as any });
+      const { showToast } = await import('@/lib/toast');
+      showToast.success('Cycle count status updated');
+      setEditDoc(null);
+      loadTasks();
+    } catch (error: any) {
+      const { showToast } = await import('@/lib/toast');
+      showToast.error(error.response?.data?.message || 'Failed to update cycle count status');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   const getStatusBadgeClasses = (status: DocumentStatus) => {
     switch (status) {
       case 'done':
@@ -64,7 +92,7 @@ export default function CycleCountsPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Cycle Counts</h1>
@@ -126,12 +154,13 @@ export default function CycleCountsPage() {
                     <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Scheduled</th>
                     <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Status</th>
                     <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Created</th>
+                    <th className="text-right p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {tasks.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center p-12">
+                      <td colSpan={7} className="text-center p-12">
                         <div className="flex flex-col items-center gap-3">
                           <ClipboardList size={48} className="text-gray-400" />
                           <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No cycle counts found</p>
@@ -173,6 +202,17 @@ export default function CycleCountsPage() {
                         <td className="p-3 text-gray-600 dark:text-gray-400">
                           {new Date(task.created_at).toLocaleDateString()}
                         </td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() =>
+                              setEditDoc({ id: task.id, number: task.document_number, status: task.status })
+                            }
+                            className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
+                            title="Edit status"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -182,6 +222,15 @@ export default function CycleCountsPage() {
           )}
         </div>
       </div>
-    </Layout>
+      <StatusEditModal
+        open={!!editDoc}
+        title={`Edit Cycle Count ${editDoc?.number || ''}`}
+        currentStatus={editDoc?.status || 'draft'}
+        statusOptions={statusOptions}
+        saving={savingStatus}
+        onClose={() => setEditDoc(null)}
+        onSave={handleSaveStatus}
+      />
+    </>
   );
 }

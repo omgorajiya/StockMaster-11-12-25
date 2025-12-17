@@ -1,21 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { operationsService, Receipt } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, Search, CheckCircle, MessageSquare } from 'lucide-react';
+import { Plus, Search, CheckCircle, MessageSquare, Pencil } from 'lucide-react';
+import StatusEditModal from '@/components/StatusEditModal';
 import Link from 'next/link';
 import SavedViewToolbar from '@/components/SavedViewToolbar';
 import DocumentCollaborationPanel from '@/components/DocumentCollaborationPanel';
 
-export default function ReceiptsPage() {
+function ReceiptsPageContent() {
+  const searchParams = useSearchParams();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   const [collabDoc, setCollabDoc] = useState<{ id: number; number: string } | null>(null);
+  const [editDoc, setEditDoc] = useState<{ id: number; number: string; status: string } | null>(null);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  const statusOptions = [
+    { value: 'draft', label: 'Draft' },
+    { value: 'waiting', label: 'Waiting' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'done', label: 'Done' },
+    { value: 'canceled', label: 'Canceled' },
+  ];
+
+  // Read status from URL on mount
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status) {
+      setStatusFilter(status);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     loadWarehouses();
@@ -70,8 +90,26 @@ export default function ReceiptsPage() {
     setWarehouseFilter(filters.warehouse ? String(filters.warehouse) : '');
   };
 
+  const handleSaveStatus = async (newStatus: string) => {
+    if (!editDoc) return;
+
+    setSavingStatus(true);
+    try {
+      await operationsService.updateReceipt(editDoc.id, { status: newStatus as any });
+      const { showToast } = await import('@/lib/toast');
+      showToast.success('Receipt status updated');
+      setEditDoc(null);
+      loadReceipts();
+    } catch (error: any) {
+      const { showToast } = await import('@/lib/toast');
+      showToast.error(error.response?.data?.message || 'Failed to update receipt status');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Receipts</h1>
@@ -169,6 +207,15 @@ export default function ReceiptsPage() {
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
+                              onClick={() =>
+                                setEditDoc({ id: receipt.id, number: receipt.document_number, status: receipt.status })
+                              }
+                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200"
+                              title="Edit status"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
                               onClick={() => setCollabDoc({ id: receipt.id, number: receipt.document_number })}
                               className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200"
                               title="Open collaboration panel"
@@ -195,6 +242,15 @@ export default function ReceiptsPage() {
           )}
         </div>
       </div>
+      <StatusEditModal
+        open={!!editDoc}
+        title={`Edit Receipt ${editDoc?.number || ''}`}
+        currentStatus={editDoc?.status || 'draft'}
+        statusOptions={statusOptions}
+        saving={savingStatus}
+        onClose={() => setEditDoc(null)}
+        onSave={handleSaveStatus}
+      />
       <DocumentCollaborationPanel
         open={!!collabDoc}
         documentType="receipt"
@@ -202,7 +258,21 @@ export default function ReceiptsPage() {
         documentNumber={collabDoc?.number}
         onClose={() => setCollabDoc(null)}
       />
-    </Layout>
+    </>
+  );
+}
+
+export default function ReceiptsPage() {
+  return (
+    <Suspense fallback={
+      <>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      </>
+    }>
+      <ReceiptsPageContent />
+    </Suspense>
   );
 }
 

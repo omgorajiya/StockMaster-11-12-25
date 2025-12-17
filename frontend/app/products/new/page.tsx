@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { productService, Product, Category, BinLocation, UnitOfMeasure } from '@/lib/products';
 import { supplierService } from '@/lib/suppliers';
 import { Save, X } from 'lucide-react';
@@ -132,8 +131,8 @@ export default function NewProductPage() {
           await supplierService.createProductSupplier({
             product: newProduct.id,
             supplier: parseInt(formData.initial_supplier),
-            unit_price: parseFloat(formData.initial_price),
-            minimum_order_quantity: 1,
+            unit_price: formData.initial_price,
+            minimum_order_quantity: '1',
             is_preferred: false,
           });
         } catch (supplierError: any) {
@@ -198,7 +197,7 @@ export default function NewProductPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Create New Product</h1>
@@ -558,7 +557,7 @@ export default function NewProductPage() {
           </div>
         </form>
       </div>
-    </Layout>
+    </>
   );
 }
 

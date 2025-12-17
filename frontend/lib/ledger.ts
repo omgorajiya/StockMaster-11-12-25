@@ -25,6 +25,8 @@ export const ledgerService = {
     warehouse?: number;
     transaction_type?: string;
     document_number?: string;
+    date_from?: string;
+    date_to?: string;
     page?: number;
   }): Promise<{ results: StockLedgerEntry[]; count: number }> {
     const response = await api.get('/operations/ledger/', { params });

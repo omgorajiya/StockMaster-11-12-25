@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { productService, Product, Category, BinLocation, UnitOfMeasure, Warehouse } from '@/lib/products';
 import { Save, X } from 'lucide-react';
 import Link from 'next/link';
@@ -68,6 +67,8 @@ export default function EditProductPage() {
         reorder_quantity: productData.reorder_quantity.toString(),
         is_active: productData.is_active,
         default_bin: productData.default_bin ? productData.default_bin.toString() : '',
+        stock_warehouse: '',
+        stock_quantity: '',
       });
     } catch (error) {
       setError('Failed to load product');
@@ -83,8 +84,10 @@ export default function EditProductPage() {
     setSaving(true);
 
     try {
+      const { stock_warehouse, stock_quantity, ...productForm } = formData;
+
       const productData = {
-        ...formData,
+        ...productForm,
         category: formData.category ? parseInt(formData.category) : null,
         stock_unit: parseInt(formData.stock_unit),
         purchase_unit: formData.purchase_unit ? parseInt(formData.purchase_unit) : null,
@@ -190,16 +193,16 @@ export default function EditProductPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Edit Product</h1>
@@ -501,7 +504,7 @@ export default function EditProductPage() {
           </div>
         </form>
       </div>
-    </Layout>
+    </>
   );
 }
 

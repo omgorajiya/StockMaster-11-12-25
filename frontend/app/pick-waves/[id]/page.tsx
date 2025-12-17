@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService, PickWave, DeliveryOrder, DeliveryItem } from '@/lib/operations';
 import { showToast } from '@/lib/toast';
 import { Play, Check } from 'lucide-react';
@@ -126,17 +125,17 @@ export default function PickWaveDetailPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   if (!pickWave) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <h2 className="text-xl font-medium text-gray-900">Pick wave not found</h2>
@@ -148,7 +147,7 @@ export default function PickWaveDetailPage() {
             </button>
           </div>
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -168,7 +167,7 @@ export default function PickWaveDetailPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -327,6 +326,6 @@ export default function PickWaveDetailPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

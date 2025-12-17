@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Layout from '@/components/Layout';
 import { supplierService, Supplier } from '@/lib/suppliers';
 import { Plus, Edit, Trash2, Package, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
@@ -48,7 +47,7 @@ export default function SuppliersPage() {
   );
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -159,7 +158,7 @@ export default function SuppliersPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

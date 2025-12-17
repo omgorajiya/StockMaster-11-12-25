@@ -52,22 +52,41 @@ class BaseDocument(models.Model):
         """Check if document is approved"""
         return self.approved_by is not None and self.approved_at is not None
         
+    def approval_document_type(self) -> str:
+        """Canonical document_type used in Approval/Comment/Attachment models."""
+        cls_name = self.__class__.__name__
+        mapping = {
+            'Receipt': 'receipt',
+            'DeliveryOrder': 'delivery',
+            'ReturnOrder': 'return',
+            'InternalTransfer': 'transfer',
+            'StockAdjustment': 'adjustment',
+            'CycleCountTask': 'cycle_count',
+        }
+        return mapping.get(cls_name, cls_name.lower())
+
     def approve(self, user, notes=''):
-        """Approve the document"""
+        """Approve the document.
+
+        RBAC: only inventory_manager/admin can approve.
+        """
         if self.is_approved():
             return False, "Document is already approved"
-            
+
+        if not getattr(user, 'is_authenticated', False) or getattr(user, 'role', None) not in ['admin', 'inventory_manager']:
+            return False, "You are not allowed to approve this document"
+
         self.approved_by = user
         self.approved_at = timezone.now()
-        
+
         # Create approval record
         Approval.objects.create(
-            document_type=self.__class__.__name__.lower(),
+            document_type=self.approval_document_type(),
             document_id=self.id,
             approver=user,
             notes=notes
         )
-        
+
         self.save(update_fields=['approved_by', 'approved_at'])
         return True, "Document approved successfully"
         
@@ -76,6 +95,45 @@ class BaseDocument(models.Model):
         if not self.requires_approval:
             return True
         return self.is_approved()
+
+
+class ApprovalPolicy(models.Model):
+    """Configurable policy deciding when documents require approval.
+
+    This is intentionally lightweight: it provides a threshold-based switch to
+    require approvals on high-impact operations.
+    """
+
+    DOCUMENT_TYPES = [
+        ('receipt', 'Receipt'),
+        ('delivery', 'Delivery Order'),
+        ('return', 'Return Order'),
+        ('transfer', 'Internal Transfer'),
+        ('adjustment', 'Stock Adjustment'),
+        ('cycle_count', 'Cycle Count'),
+    ]
+
+    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES)
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, null=True, blank=True)
+
+    # If set, approval is required when the computed quantity/variance meets or exceeds this.
+    # If null, approval is always required for matching docs.
+    threshold_total_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['document_type', '-created_at']
+
+    def __str__(self):
+        scope = f"warehouse={self.warehouse.code}" if self.warehouse_id else "global"
+        return f"ApprovalPolicy({self.document_type}, {scope})"
 
 
 class Receipt(BaseDocument):
@@ -686,6 +744,11 @@ class Approval(models.Model):
         ('return', 'Return Order'),
         ('transfer', 'Internal Transfer'),
         ('adjustment', 'Stock Adjustment'),
+        # Backwards-compatible aliases (older code used model class names)
+        ('deliveryorder', 'Delivery Order (legacy)'),
+        ('returnorder', 'Return Order (legacy)'),
+        ('internaltransfer', 'Internal Transfer (legacy)'),
+        ('stockadjustment', 'Stock Adjustment (legacy)'),
     ]
     
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES)
@@ -760,7 +823,7 @@ class SavedView(models.Model):
 
 
 class AuditLog(models.Model):
-    """Audit log for critical document actions."""
+    """Audit log for critical actions (documents + admin access changes)."""
 
     ACTION_CHOICES = [
         ('validation', 'Validation'),
@@ -768,11 +831,16 @@ class AuditLog(models.Model):
         ('approval', 'Approval'),
         ('update', 'Update'),
         ('comment', 'Comment'),
+        ('access_change', 'Access Change'),
     ]
 
     document_type = models.CharField(max_length=50)
     document_id = models.PositiveIntegerField()
     action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+
+    # Optional warehouse context to enable warehouse-scoped audit review.
+    warehouse = models.ForeignKey(Warehouse, null=True, blank=True, on_delete=models.SET_NULL)
+
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
     message = models.CharField(max_length=255, blank=True)
     before_data = models.JSONField(null=True, blank=True)

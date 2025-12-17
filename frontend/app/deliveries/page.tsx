@@ -1,21 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { operationsService, DeliveryOrder } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, CheckCircle, MessageSquare } from 'lucide-react';
+import { Plus, CheckCircle, MessageSquare, Pencil } from 'lucide-react';
+import StatusEditModal from '@/components/StatusEditModal';
 import Link from 'next/link';
 import SavedViewToolbar from '@/components/SavedViewToolbar';
 import DocumentCollaborationPanel from '@/components/DocumentCollaborationPanel';
 
-export default function DeliveriesPage() {
+function DeliveriesPageContent() {
+  const searchParams = useSearchParams();
   const [deliveries, setDeliveries] = useState<DeliveryOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   const [collabDoc, setCollabDoc] = useState<{ id: number; number: string } | null>(null);
+  const [editDoc, setEditDoc] = useState<{ id: number; number: string; status: string } | null>(null);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  const statusOptions = [
+    { value: 'draft', label: 'Draft' },
+    { value: 'waiting', label: 'Waiting' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'done', label: 'Done' },
+    { value: 'canceled', label: 'Canceled' },
+  ];
+
+  // Read status from URL on mount
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status) {
+      setStatusFilter(status);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     loadWarehouses();
@@ -37,10 +57,27 @@ export default function DeliveriesPage() {
   const loadDeliveries = async () => {
     try {
       const params: any = {};
-      if (statusFilter) params.status = statusFilter;
+      // Handle multiple statuses (comma-separated)
+      if (statusFilter) {
+        const statuses = statusFilter.split(',').map(s => s.trim());
+        if (statuses.length === 1) {
+          params.status = statuses[0];
+        } else {
+          // If multiple statuses, we'll filter on frontend
+          params.status = statuses[0]; // Backend only supports single status
+        }
+      }
       if (warehouseFilter) params.warehouse = parseInt(warehouseFilter);
       const data = await operationsService.getDeliveries(params);
-      setDeliveries(data.results || data);
+      let deliveries = data.results || data;
+      
+      // Filter by multiple statuses if provided
+      if (statusFilter && statusFilter.includes(',')) {
+        const statuses = statusFilter.split(',').map(s => s.trim());
+        deliveries = deliveries.filter((d: DeliveryOrder) => statuses.includes(d.status));
+      }
+      
+      setDeliveries(deliveries);
     } catch (error) {
       console.error('Failed to load deliveries:', error);
     } finally {
@@ -70,8 +107,26 @@ export default function DeliveriesPage() {
     setWarehouseFilter(filters.warehouse ? String(filters.warehouse) : '');
   };
 
+  const handleSaveStatus = async (newStatus: string) => {
+    if (!editDoc) return;
+
+    setSavingStatus(true);
+    try {
+      await operationsService.updateDelivery(editDoc.id, { status: newStatus as any });
+      const { showToast } = await import('@/lib/toast');
+      showToast.success('Delivery status updated');
+      setEditDoc(null);
+      loadDeliveries();
+    } catch (error: any) {
+      const { showToast } = await import('@/lib/toast');
+      showToast.error(error.response?.data?.message || 'Failed to update delivery status');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Delivery Orders</h1>
@@ -169,6 +224,15 @@ export default function DeliveriesPage() {
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
+                              onClick={() =>
+                                setEditDoc({ id: delivery.id, number: delivery.document_number, status: delivery.status })
+                              }
+                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
+                              title="Edit status"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
                               onClick={() => setCollabDoc({ id: delivery.id, number: delivery.document_number })}
                               className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
                               title="Open collaboration panel"
@@ -195,6 +259,15 @@ export default function DeliveriesPage() {
           )}
         </div>
       </div>
+      <StatusEditModal
+        open={!!editDoc}
+        title={`Edit Delivery ${editDoc?.number || ''}`}
+        currentStatus={editDoc?.status || 'draft'}
+        statusOptions={statusOptions}
+        saving={savingStatus}
+        onClose={() => setEditDoc(null)}
+        onSave={handleSaveStatus}
+      />
       <DocumentCollaborationPanel
         open={!!collabDoc}
         documentType="delivery"
@@ -202,7 +275,21 @@ export default function DeliveriesPage() {
         documentNumber={collabDoc?.number}
         onClose={() => setCollabDoc(null)}
       />
-    </Layout>
+    </>
+  );
+}
+
+export default function DeliveriesPage() {
+  return (
+    <Suspense fallback={
+      <>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      </>
+    }>
+      <DeliveriesPageContent />
+    </Suspense>
   );
 }
 

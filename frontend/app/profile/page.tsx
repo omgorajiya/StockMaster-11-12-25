@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Layout from '@/components/Layout';
 import { authService, User } from '@/lib/auth';
 import { ShieldCheck, Mail, UserCircle2, Clock, ArrowRight } from 'lucide-react';
 
@@ -27,16 +26,16 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6 max-w-4xl mx-auto">
         <div className="flex items-center justify-between">
           <div>
@@ -126,7 +125,7 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }
 

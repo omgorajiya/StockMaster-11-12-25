@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService, CycleCountTask, CycleCountItem } from '@/lib/operations';
 import { Save, CheckCircle, PlayCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -102,18 +101,18 @@ export default function CycleCountDetailPage() {
 
   if (loading || !task) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   const hasDifferences = items.some((item) => item.variance !== 0);
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -233,6 +232,6 @@ export default function CycleCountDetailPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

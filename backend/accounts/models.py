@@ -4,6 +4,7 @@ import random
 import string
 from datetime import datetime, timedelta
 from django.utils import timezone
+from django.conf import settings
 
 
 class User(AbstractUser):
@@ -19,6 +20,15 @@ class User(AbstractUser):
         ],
         default='warehouse_staff'
     )
+
+    # Warehouse membership / scoping.
+    # Non-admin users should typically only see data for these warehouses.
+    allowed_warehouses = models.ManyToManyField(
+        'products.Warehouse',
+        blank=True,
+        related_name='users',
+    )
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -28,6 +38,62 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class Invite(models.Model):
+    """Invite token for onboarding users (company-realistic signup).
+
+    This enables invite-only registration and prevents privilege escalation.
+
+    Note: warehouse scoping is added as an optional M2M so we can later assign
+    `User.allowed_warehouses` during acceptance.
+    """
+
+    ROLE_CHOICES = [
+        ('inventory_manager', 'Inventory Manager'),
+        ('warehouse_staff', 'Warehouse Staff'),
+        ('admin', 'Admin'),
+    ]
+
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    email = models.EmailField(db_index=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='warehouse_staff')
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invites_created',
+    )
+
+    # Optional: warehouse scope for the invited user.
+    allowed_warehouses = models.ManyToManyField(
+        'products.Warehouse',
+        blank=True,
+        related_name='invites',
+    )
+
+    expires_at = models.DateTimeField(null=True, blank=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Invite({self.email}, {self.role})"
+
+    def is_active(self):
+        if self.revoked_at is not None:
+            return False
+        if self.used_at is not None:
+            return False
+        if self.expires_at is not None and timezone.now() >= self.expires_at:
+            return False
+        return True
 
 
 class OTP(models.Model):

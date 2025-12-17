@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService, ReceiptItem } from '@/lib/operations';
 import { productService, Product, Warehouse, BinLocation } from '@/lib/products';
 import { Save, X, Plus, Trash2, Scan } from 'lucide-react';
@@ -213,7 +212,7 @@ export default function NewReceiptPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Create New Receipt</h1>
@@ -341,7 +340,7 @@ export default function NewReceiptPage() {
             </div>
 
             {items.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No items added. Click "Add Item" to start.</p>
+              <p className="text-gray-500 text-center py-8">No items added. Click “Add Item” to start.</p>
             ) : (
               <div className="space-y-4">
                 {items.map((item, index) => (
@@ -519,7 +518,7 @@ export default function NewReceiptPage() {
       {scannerItemIndex !== null && scannerEnabled && (
         <BarcodeScanner onScan={handleScanResult} onClose={() => setScannerItemIndex(null)} />
       )}
-    </Layout>
+    </>
   );
 }
 

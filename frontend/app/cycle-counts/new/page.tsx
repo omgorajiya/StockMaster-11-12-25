@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService } from '@/lib/operations';
 import { productService, Warehouse, Product } from '@/lib/products';
 import { Save, X } from 'lucide-react';
@@ -150,7 +149,7 @@ export default function NewCycleCountPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">New Cycle Count</h1>
@@ -309,6 +308,6 @@ export default function NewCycleCountPage() {
           </div>
         </form>
       </div>
-    </Layout>
+    </>
   );
 }

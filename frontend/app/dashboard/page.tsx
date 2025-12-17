@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Layout from '@/components/Layout';
-import { dashboardService, DashboardKPIs, RecentActivity, LowStockProduct } from '@/lib/dashboard';
+import { dashboardService, DashboardKPIs, RecentActivity, LowStockProduct, MovementValueTrend, InventoryValueByHealth } from '@/lib/dashboard';
+import { productService, Warehouse } from '@/lib/products';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -11,6 +11,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   PieChart,
   Pie,
   Cell,
@@ -37,29 +38,79 @@ export default function DashboardPage() {
   const [kpis, setKPIs] = useState<DashboardKPIs | null>(null);
   const [activities, setActivities] = useState<RecentActivity[]>([]);
   const [lowStock, setLowStock] = useState<LowStockProduct[]>([]);
+  const [movementTrend, setMovementTrend] = useState<MovementValueTrend[]>([]);
+  const [valueByHealth, setValueByHealth] = useState<InventoryValueByHealth | null>(null);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
+  const [timeRange, setTimeRange] = useState<number>(30);
+  const [showStatusBreakdown, setShowStatusBreakdown] = useState<boolean>(true);
 
   useEffect(() => {
     loadDashboardData();
+    loadWarehouses();
   }, []);
+
+  const loadWarehouses = async () => {
+    try {
+      const data = await productService.getWarehouses();
+      setWarehouses(data);
+    } catch (error) {
+      console.error('Failed to load warehouses:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
-      const [kpisData, activitiesData, lowStockData] = await Promise.all([
+      const [kpisData, activitiesData, lowStockData, movementTrendData, valueByHealthData] = await Promise.all([
         dashboardService.getKPIs(),
         dashboardService.getRecentActivities(5),
         dashboardService.getLowStockProducts(),
+        dashboardService.getMovementValueTrend(timeRange, selectedWarehouse, showStatusBreakdown),
+        dashboardService.getInventoryValueByHealth(selectedWarehouse),
       ]);
       setKPIs(kpisData);
       setActivities(activitiesData);
       setLowStock(lowStockData);
+      setMovementTrend(movementTrendData.trend);
+      setValueByHealth(valueByHealthData);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (timeRange) {
+      loadMovementTrend();
+    }
+  }, [timeRange, selectedWarehouse, showStatusBreakdown]);
+
+  useEffect(() => {
+    if (selectedWarehouse !== undefined) {
+      loadValueByHealth();
+    }
+  }, [selectedWarehouse]);
+
+  const loadMovementTrend = async () => {
+    try {
+      const data = await dashboardService.getMovementValueTrend(timeRange, selectedWarehouse, showStatusBreakdown);
+      setMovementTrend(data.trend);
+    } catch (error) {
+      console.error('Failed to load movement trend:', error);
+    }
+  };
+
+  const loadValueByHealth = async () => {
+    try {
+      const data = await dashboardService.getInventoryValueByHealth(selectedWarehouse);
+      setValueByHealth(data);
+    } catch (error) {
+      console.error('Failed to load value by health:', error);
     }
   };
 
@@ -167,11 +218,11 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -202,62 +253,63 @@ export default function DashboardPage() {
       value: kpis?.pending_receipts || 0,
       icon: Receipt,
       color: 'bg-green-500',
-      href: '/receipts?status=ready',
+      href: '/receipts?status=draft,waiting,ready',
     },
     {
       title: 'Pending Deliveries',
       value: kpis?.pending_deliveries || 0,
       icon: Truck,
       color: 'bg-purple-500',
-      href: '/deliveries?status=ready',
+      href: '/deliveries?status=draft,waiting,ready',
     },
     {
       title: 'Scheduled Transfers',
       value: kpis?.scheduled_transfers || 0,
       icon: ArrowLeftRight,
       color: 'bg-indigo-500',
-      href: '/transfers?status=ready',
+      href: '/transfers?status=draft,waiting,ready',
     },
   ];
 
-  const flowChartData =
-    activities.length === 0
-      ? [
-          { label: 'Receipts', count: 0 },
-          { label: 'Deliveries', count: 0 },
-          { label: 'Transfers', count: 0 },
-        ]
-      : [
-          {
-            label: 'Receipts',
-            count: activities.filter((a) => a.type === 'receipt').length,
-          },
-          {
-            label: 'Deliveries',
-            count: activities.filter((a) => a.type === 'delivery').length,
-          },
-          {
-            label: 'Transfers',
-            count: activities.filter((a) => a.type === 'transfer').length,
-          },
-        ];
+  // Format movement trend data for chart
+  const movementChartData = movementTrend.length > 0 
+    ? movementTrend.map(item => ({
+        date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        receipts: item.receipts_value,
+        deliveries: item.deliveries_value,
+        transfers: item.transfers_value,
+      }))
+    : [];
 
-  const stockHealthData = [
-    {
-      name: 'Healthy',
-      value:
-        (kpis?.total_products || 0) -
-        (kpis?.low_stock_items || 0) -
-        (kpis?.out_of_stock_items || 0),
-    },
-    { name: 'Low stock', value: kpis?.low_stock_items || 0 },
-    { name: 'Out of stock', value: kpis?.out_of_stock_items || 0 },
-  ];
+  // Format stock health value data for chart
+  const stockHealthData = valueByHealth
+    ? [
+        {
+          name: 'Healthy',
+          value: valueByHealth.healthy.value,
+          count: valueByHealth.healthy.count,
+        },
+        {
+          name: 'Low stock',
+          value: valueByHealth.low_stock.value,
+          count: valueByHealth.low_stock.count,
+        },
+        {
+          name: 'Out of stock',
+          value: valueByHealth.out_of_stock.value,
+          count: valueByHealth.out_of_stock.count,
+        },
+      ]
+    : [
+        { name: 'Healthy', value: 0, count: 0 },
+        { name: 'Low stock', value: 0, count: 0 },
+        { name: 'Out of stock', value: 0, count: 0 },
+      ];
 
   const stockHealthColors = ['#22c55e', '#eab308', '#ef4444'];
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -426,42 +478,92 @@ export default function DashboardPage() {
 
         {/* Live operations & stock overview */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          {/* Recent flow mix */}
+          {/* Inventory Movement Value Trend */}
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow border border-slate-100/80 dark:border-gray-800 p-6 lg:col-span-2">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-100">
-                  Recent flow mix (last activities)
+                  Inventory Movement Value Trend
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                  Live breakdown of receipts, deliveries and transfers.
+                  Financial view of inbound, outbound, and inter-warehouse movements over time. Toggle status breakdown to see document workflow stages.
                 </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowStatusBreakdown(!showStatusBreakdown)}
+                  className={`text-xs px-3 py-1 rounded-lg border transition-all duration-200 ${
+                    showStatusBreakdown
+                      ? 'bg-primary-100 border-primary-300 text-primary-700 dark:bg-primary-900/40 dark:border-primary-700 dark:text-primary-200'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100'
+                  }`}
+                  title="Toggle status breakdown"
+                >
+                  {showStatusBreakdown ? 'Hide Status' : 'Show Status'}
+                </button>
+                <select
+                  value={selectedWarehouse || ''}
+                  onChange={(e) => setSelectedWarehouse(e.target.value ? Number(e.target.value) : undefined)}
+                  className="text-xs px-2 py-1 border border-gray-300 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                >
+                  <option value="">All Warehouses</option>
+                  {warehouses.map((wh) => (
+                    <option key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={timeRange}
+                  onChange={(e) => setTimeRange(Number(e.target.value))}
+                  className="text-xs px-2 py-1 border border-gray-300 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
               </div>
             </div>
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={flowChartData}>
+                <AreaChart data={movementChartData}>
                   <defs>
-                    <linearGradient id="flowArea" x1="0" y1="1" x2="1" y2="0">
-                      <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.05} />
-                      <stop offset="50%" stopColor="#22c55e" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity={0.6} />
+                    <linearGradient id="receiptsGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="deliveriesGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="transfersGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
                   <XAxis
-                    dataKey="label"
+                    dataKey="date"
                     stroke="#64748b"
                     tickLine={false}
-                    tick={{ fontSize: 12, fill: '#64748b' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
                   />
                   <YAxis
-                    allowDecimals={false}
                     stroke="#64748b"
                     tickLine={false}
-                    tick={{ fontSize: 12, fill: '#64748b' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tickFormatter={(value) => {
+                      if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+                      if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
+                      return `$${value.toFixed(0)}`;
+                    }}
                   />
                   <Tooltip
+                    formatter={(value: any) => [`$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, '']}
+                    labelFormatter={(label) => `Date: ${label}`}
                     contentStyle={{
                       backgroundColor: '#f9fafb',
                       border: '1px solid rgba(148,163,184,0.4)',
@@ -469,24 +571,203 @@ export default function DashboardPage() {
                       fontSize: 12,
                     }}
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="count"
-                    name="Documents"
-                    stroke="#0ea5e9"
-                    strokeWidth={3}
-                    fill="url(#flowArea)"
-                    dot={{ r: 4, strokeWidth: 2, stroke: '#0f172a', fill: '#0ea5e9' }}
-                    activeDot={{ r: 6 }}
+                  {showStatusBreakdown && movementChartData.length > 0 && movementChartData[0]?.receipts_done !== undefined ? (
+                    <>
+                      {/* Receipts Status Breakdown */}
+                      <Area
+                        type="monotone"
+                        dataKey="receipts_done"
+                        name="Receipts - Done"
+                        stackId="receipts"
+                        stroke="#16a34a"
+                        strokeWidth={1.5}
+                        fill="#22c55e"
+                        fillOpacity={0.7}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="receipts_ready"
+                        name="Receipts - Ready"
+                        stackId="receipts"
+                        stroke="#4ade80"
+                        strokeWidth={1.5}
+                        fill="#4ade80"
+                        fillOpacity={0.6}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="receipts_waiting"
+                        name="Receipts - Waiting"
+                        stackId="receipts"
+                        stroke="#86efac"
+                        strokeWidth={1.5}
+                        fill="#86efac"
+                        fillOpacity={0.5}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="receipts_draft"
+                        name="Receipts - Draft"
+                        stackId="receipts"
+                        stroke="#bbf7d0"
+                        strokeWidth={1.5}
+                        fill="#bbf7d0"
+                        fillOpacity={0.4}
+                      />
+                      {/* Deliveries Status Breakdown */}
+                      <Area
+                        type="monotone"
+                        dataKey="deliveries_done"
+                        name="Deliveries - Done"
+                        stackId="deliveries"
+                        stroke="#dc2626"
+                        strokeWidth={1.5}
+                        fill="#ef4444"
+                        fillOpacity={0.7}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="deliveries_ready"
+                        name="Deliveries - Ready"
+                        stackId="deliveries"
+                        stroke="#f87171"
+                        strokeWidth={1.5}
+                        fill="#f87171"
+                        fillOpacity={0.6}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="deliveries_waiting"
+                        name="Deliveries - Waiting"
+                        stackId="deliveries"
+                        stroke="#fca5a5"
+                        strokeWidth={1.5}
+                        fill="#fca5a5"
+                        fillOpacity={0.5}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="deliveries_draft"
+                        name="Deliveries - Draft"
+                        stackId="deliveries"
+                        stroke="#fecaca"
+                        strokeWidth={1.5}
+                        fill="#fecaca"
+                        fillOpacity={0.4}
+                      />
+                      {/* Transfers Status Breakdown */}
+                      <Area
+                        type="monotone"
+                        dataKey="transfers_done"
+                        name="Transfers - Done"
+                        stackId="transfers"
+                        stroke="#4f46e5"
+                        strokeWidth={1.5}
+                        fill="#6366f1"
+                        fillOpacity={0.7}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="transfers_ready"
+                        name="Transfers - Ready"
+                        stackId="transfers"
+                        stroke="#818cf8"
+                        strokeWidth={1.5}
+                        fill="#818cf8"
+                        fillOpacity={0.6}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="transfers_waiting"
+                        name="Transfers - Waiting"
+                        stackId="transfers"
+                        stroke="#a5b4fc"
+                        strokeWidth={1.5}
+                        fill="#a5b4fc"
+                        fillOpacity={0.5}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="transfers_draft"
+                        name="Transfers - Draft"
+                        stackId="transfers"
+                        stroke="#c7d2fe"
+                        strokeWidth={1.5}
+                        fill="#c7d2fe"
+                        fillOpacity={0.4}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Area
+                        type="monotone"
+                        dataKey="receipts"
+                        name="Receipts (Inbound)"
+                        stackId="1"
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        fill="url(#receiptsGradient)"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="deliveries"
+                        name="Deliveries (Outbound)"
+                        stackId="1"
+                        stroke="#ef4444"
+                        strokeWidth={2}
+                        fill="url(#deliveriesGradient)"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="transfers"
+                        name="Transfers (Inter-warehouse)"
+                        stackId="1"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        fill="url(#transfersGradient)"
+                      />
+                    </>
+                  )}
+                  <Legend
+                    wrapperStyle={{ fontSize: '10px', paddingTop: '10px', maxHeight: '120px', overflowY: 'auto' }}
+                    iconType="circle"
+                    formatter={(value) => {
+                      // Shorten long legend labels for better display
+                      if (value.includes(' - ')) {
+                        const parts = value.split(' - ');
+                        const type = parts[0].substring(0, 4);
+                        return `${type} - ${parts[1]}`;
+                      }
+                      return value;
+                    }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Stock health pie */}
+          {/* Inventory Value by Health Status */}
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow border border-slate-100/80 dark:border-gray-800 p-6">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-100 mb-2">Stock health snapshot</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-100">
+                Inventory Value Distribution by Stock Health
+              </h2>
+              <select
+                value={selectedWarehouse || ''}
+                onChange={(e) => setSelectedWarehouse(e.target.value ? Number(e.target.value) : undefined)}
+                className="text-[10px] px-2 py-1 border border-gray-300 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+              >
+                <option value="">All</option>
+                {warehouses.map((wh) => (
+                  <option key={wh.id} value={wh.id}>
+                    {wh.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-gray-400 mb-3">
+              Value-based view prioritizing high-value items needing attention.
+            </p>
             <div className="h-40">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -506,7 +787,10 @@ export default function DashboardPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: any, name: any) => [`${value}`, name]}
+                    formatter={(value: any, name: any) => [
+                      `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      name
+                    ]}
                     contentStyle={{
                       backgroundColor: '#f9fafb',
                       border: '1px solid rgba(148,163,184,0.4)',
@@ -517,7 +801,7 @@ export default function DashboardPage() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <ul className="mt-3 space-y-1 text-xs text-slate-600">
+            <ul className="mt-3 space-y-1.5 text-xs text-slate-600 dark:text-gray-300">
               {stockHealthData.map((entry, index) => (
                 <li key={entry.name} className="flex items-center justify-between">
                   <span className="inline-flex items-center gap-2">
@@ -525,12 +809,28 @@ export default function DashboardPage() {
                       className="h-2 w-2 rounded-full"
                       style={{ backgroundColor: stockHealthColors[index] }}
                     />
-                    {entry.name}
+                    <span>{entry.name}</span>
                   </span>
-                  <span className="font-semibold">{entry.value}</span>
+                  <div className="text-right">
+                    <span className="font-semibold">
+                      ${Number(entry.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-gray-400 ml-1">
+                      ({entry.count} items)
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>
+            {valueByHealth && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-[10px] text-slate-500 dark:text-gray-400">
+                  Total Inventory Value: <span className="font-semibold text-slate-700 dark:text-gray-200">
+                    ${Number(valueByHealth.total_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -542,14 +842,14 @@ export default function DashboardPage() {
               <Link
                 key={card.title}
                 href={card.href}
-                className="bg-white rounded-lg shadow p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer"
+                className="bg-white rounded-lg shadow p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer border-2 border-transparent hover:border-primary-200 active:scale-95"
               >
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1">
                     <p className="text-gray-600 text-sm font-medium group-hover:text-gray-900 transition-colors">{card.title}</p>
                     <p className="text-3xl font-bold text-gray-900 mt-2 group-hover:text-primary-600 transition-colors">{card.value}</p>
                   </div>
-                  <div className={`${card.color} p-3 rounded-lg group-hover:scale-110 transition-transform duration-300`}>
+                  <div className={`${card.color} p-3 rounded-lg group-hover:scale-110 transition-transform duration-300 flex-shrink-0`}>
                     <Icon className="text-white" size={24} />
                   </div>
                 </div>
@@ -711,7 +1011,7 @@ export default function DashboardPage() {
           </p>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

@@ -11,5 +11,7 @@ urlpatterns = [
     path('analytics/replenishment/', views.replenishment_suggestions, name='replenishment'),
     path('analytics/service-levels/', views.service_level_metrics, name='service-levels'),
     path('analytics/abc-xyz/', views.abc_xyz_analysis, name='abc-xyz'),
+    path('movement-value-trend/', views.inventory_movement_value_trend, name='movement-value-trend'),
+    path('value-by-health/', views.inventory_value_by_health, name='value-by-health'),
 ]
 

@@ -3,6 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+
+from accounts.permissions import capability_required
+from accounts.scoping import allowed_warehouse_ids, require_warehouse_membership
 from .models import (
     Category,
     Warehouse,
@@ -43,6 +46,11 @@ class CategoryViewSet(viewsets.ModelViewSet):
     search_fields = ['name']
     ordering_fields = ['name', 'created_at']
 
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
+
 
 class WarehouseViewSet(viewsets.ModelViewSet):
     """Warehouse CRUD operations"""
@@ -52,6 +60,22 @@ class WarehouseViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code']
     ordering_fields = ['name', 'created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, 'user', None)
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+
+        ids = allowed_warehouse_ids(user) or []
+        if not ids:
+            return qs.none() if require_warehouse_membership() else qs
+        return qs.filter(id__in=ids)
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
 
 
 class BinLocationViewSet(viewsets.ModelViewSet):
@@ -65,6 +89,22 @@ class BinLocationViewSet(viewsets.ModelViewSet):
     search_fields = ['code', 'description', 'warehouse__name', 'warehouse__code']
     ordering_fields = ['warehouse__name', 'code', 'created_at']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, 'user', None)
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+
+        ids = allowed_warehouse_ids(user) or []
+        if not ids:
+            return qs.none() if require_warehouse_membership() else qs
+        return qs.filter(warehouse_id__in=ids)
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
+
 
 class ProductViewSet(viewsets.ModelViewSet):
     """Product CRUD operations"""
@@ -74,6 +114,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     filterset_fields = ['category', 'is_active']
     search_fields = ['name', 'sku', 'code']
     ordering_fields = ['name', 'sku', 'created_at']
+
+    def get_permissions(self):
+        read_actions = ['list', 'retrieve', 'stock_by_warehouse', 'low_stock', 'qr_code', 'lookup']
+        if self.action in read_actions:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -91,32 +137,53 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def stock_by_warehouse(self, request, pk=None):
-        """Get stock for a product by warehouse"""
+        """Get stock for a product by warehouse.
+
+        Warehouse-scoped for non-admin users to prevent cross-warehouse leakage.
+        """
         product = self.get_object()
         warehouse_id = request.query_params.get('warehouse_id')
-        
+
+        user = getattr(request, 'user', None)
+        is_admin = getattr(user, 'role', None) == 'admin'
+        allowed_ids = allowed_warehouse_ids(user) or []
+
         if warehouse_id:
             try:
                 warehouse = Warehouse.objects.get(id=warehouse_id)
-                # Get the actual StockItem object for full details
-                try:
-                    stock_item = StockItem.objects.get(product=product, warehouse=warehouse)
-                    serializer = StockItemSerializer(stock_item)
-                    return Response(serializer.data)
-                except StockItem.DoesNotExist:
-                    # Return empty stock item structure
-                    return Response({
-                        'product': product.id,
-                        'warehouse': warehouse.id,
-                        'quantity': '0.00',
-                        'reserved_quantity': '0.00',
-                        'available_quantity': '0.00'
-                })
             except Warehouse.DoesNotExist:
                 return Response({'error': 'Warehouse not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Return stock for all warehouses
+
+            if not is_admin:
+                if not allowed_ids:
+                    if require_warehouse_membership():
+                        return Response({'error': 'Warehouse not found'}, status=status.HTTP_404_NOT_FOUND)
+                elif warehouse.id not in allowed_ids:
+                    return Response({'error': 'Warehouse not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            # Get the actual StockItem object for full details
+            try:
+                stock_item = StockItem.objects.get(product=product, warehouse=warehouse)
+                serializer = StockItemSerializer(stock_item)
+                return Response(serializer.data)
+            except StockItem.DoesNotExist:
+                # Return empty stock item structure
+                return Response({
+                    'product': product.id,
+                    'warehouse': warehouse.id,
+                    'quantity': '0.00',
+                    'reserved_quantity': '0.00',
+                    'available_quantity': '0.00',
+                })
+
+        # Return stock for all warehouses (scoped)
         stock_items = StockItem.objects.filter(product=product)
+        if not is_admin:
+            if not allowed_ids:
+                stock_items = stock_items.none() if require_warehouse_membership() else stock_items
+            else:
+                stock_items = stock_items.filter(warehouse_id__in=allowed_ids)
+
         serializer = StockItemSerializer(stock_items, many=True)
         return Response(serializer.data)
 
@@ -218,6 +285,22 @@ class StockItemViewSet(viewsets.ModelViewSet):
     filterset_fields = ['product', 'warehouse']
     search_fields = ['product__name', 'product__sku', 'warehouse__name']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, 'user', None)
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+
+        ids = allowed_warehouse_ids(user) or []
+        if not ids:
+            return qs.none() if require_warehouse_membership() else qs
+        return qs.filter(warehouse_id__in=ids)
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
+
 
 class SupplierViewSet(viewsets.ModelViewSet):
     """Supplier CRUD operations"""
@@ -227,6 +310,11 @@ class SupplierViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'contact_person', 'email']
     ordering_fields = ['name', 'created_at']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'products']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
 
     @action(detail=True, methods=['get'])
     def products(self, request, pk=None):
@@ -245,6 +333,11 @@ class ProductSupplierViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['product', 'supplier', 'is_preferred']
     search_fields = ['product__name', 'product__sku', 'supplier__name']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'by_product', 'best_supplier']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
 
     @action(detail=False, methods=['get'])
     def by_product(self, request):
@@ -304,6 +397,11 @@ class UnitOfMeasureViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code']
     ordering_fields = ['name', 'code', 'created_at']
 
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
+
 
 class UnitConversionViewSet(viewsets.ModelViewSet):
     """Manage unit conversion ratios."""
@@ -313,4 +411,9 @@ class UnitConversionViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['from_unit__name', 'to_unit__name']
     ordering_fields = ['from_unit__name', 'to_unit__name', 'conversion_factor']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated(), capability_required('products.read')()]
+        return [IsAuthenticated(), capability_required('products.write')()]
 

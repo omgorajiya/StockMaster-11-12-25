@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { integrationsService, WebhookConfig, IntegrationEvent } from '@/lib/integrations';
 import { Plug, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { showToast } from '@/lib/toast';
@@ -80,7 +79,7 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -253,7 +252,7 @@ export default function IntegrationsPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

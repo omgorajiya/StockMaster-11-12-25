@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { operationsService, AuditLogEntry } from '@/lib/operations';
 import { Search, ShieldCheck } from 'lucide-react';
 
@@ -29,7 +28,7 @@ export default function AuditLogPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -109,7 +108,7 @@ export default function AuditLogPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

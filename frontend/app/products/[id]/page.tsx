@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { productService, Product, StockItem } from '@/lib/products';
 import { ArrowLeft, PackageSearch, Warehouse, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
@@ -40,17 +39,17 @@ export default function ProductDetailPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   if (error || !product) {
     return (
-      <Layout>
+      <>
         <div className="max-w-3xl mx-auto py-10 space-y-4">
           <button
             onClick={() => router.push('/products')}
@@ -64,7 +63,7 @@ export default function ProductDetailPage() {
             <span>{error || 'Product not found.'}</span>
           </div>
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -72,7 +71,7 @@ export default function ProductDetailPage() {
     product.stock_unit_detail?.code || product.stock_unit_detail?.name || '';
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -213,7 +212,7 @@ export default function ProductDetailPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

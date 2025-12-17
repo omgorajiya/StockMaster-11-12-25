@@ -40,56 +40,37 @@ export default function Layout({ children }: LayoutProps) {
   const initializedRef = useRef(false);
   // Use ref to lock sidebar state during navigation to prevent visual flicker
   const sidebarStateLockedRef = useRef(false);
-  
-  // Initialize sidebar state immediately to prevent visual flicker
-  // This ensures sidebar width is stable from the first render
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarOpen');
-      if (saved !== null) {
-        return saved === 'true';
-      }
-      // Default to open on desktop, closed on mobile
-      return window.innerWidth >= 1024;
-    }
-    return false; // SSR default
-  });
-  
+
+  // IMPORTANT: keep initial state SSR-stable.
+  // If we read window/localStorage in the initial render, the client can render a different icon
+  // (<Menu> vs <X>) than the server did, triggering a hydration mismatch inside lucide-react.
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => {
-    // Initialize isMobile immediately if window is available (for SSR safety)
-    if (typeof window !== 'undefined') {
-      return window.innerWidth < 1024;
-    }
-    return false;
-  });
+  const [isMobile, setIsMobile] = useState(false);
 
   // Initialize client-side state after mount to prevent hydration mismatch
   // This runs only once on mount and ensures state is synchronized
   useEffect(() => {
     if (typeof window === 'undefined' || initializedRef.current) return;
-    
+
     initializedRef.current = true;
-    setMounted(true);
-    // Lock sidebar state after initialization to prevent changes during navigation
-    sidebarStateLockedRef.current = true;
-    
-    // Initialize isMobile state
+
     const initialIsMobile = window.innerWidth < 1024;
     setIsMobile(initialIsMobile);
-    
-    // Verify sidebar state matches localStorage (already initialized in useState)
-    // This is just a verification step, not a state change
+
     const saved = localStorage.getItem('sidebarOpen');
+    const nextSidebarOpen = saved !== null ? saved === 'true' : !initialIsMobile;
+    setSidebarOpen(nextSidebarOpen);
+
+    // Seed localStorage if there isn't a stored preference yet
     if (saved === null) {
-      // Save the current state to localStorage if not already saved
-      const defaultOpen = !initialIsMobile;
-      localStorage.setItem('sidebarOpen', String(defaultOpen));
-      // Update state to match
-      setSidebarOpen(defaultOpen);
+      localStorage.setItem('sidebarOpen', String(nextSidebarOpen));
     }
-    // Note: We don't update sidebarOpen here to prevent re-renders
-    // It's already initialized correctly in useState
+
+    // Lock sidebar state after initialization to prevent changes during navigation
+    sidebarStateLockedRef.current = true;
+    setMounted(true);
   }, []);
 
   // Persist sidebar state to localStorage whenever it changes (user action only)
@@ -206,7 +187,6 @@ export default function Layout({ children }: LayoutProps) {
     { href: '/analytics', label: 'Analytics', icon: LayoutDashboard },
     { href: '/history', label: 'Move History', icon: History },
     { href: '/audit-log', label: 'Audit Log', icon: ShieldCheck },
-    { href: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -296,9 +276,10 @@ export default function Layout({ children }: LayoutProps) {
               const IconComponent = item.icon;
               
               // Check if route is active (handles nested routes)
-              const isActive = item.exact 
+              // Only check pathname after mount to prevent hydration mismatch
+              const isActive = mounted ? (item.exact 
                 ? pathname === item.href || (item.href === '/dashboard' && pathname === '/')
-                : isRouteActive(item.href, pathname);
+                : isRouteActive(item.href, pathname)) : false;
               
               if (!IconComponent) return null;
               
@@ -338,7 +319,7 @@ export default function Layout({ children }: LayoutProps) {
                     <IconComponent
                       size={20}
                       className={`transition-transform duration-200 group-hover:scale-110 flex-shrink-0 ${
-                        isActive ? 'text-primary-700 dark:text-primary-200' : ''
+                        mounted && isActive ? 'text-primary-700 dark:text-primary-200' : ''
                       }`}
                       aria-hidden="true"
                     />
@@ -370,7 +351,7 @@ export default function Layout({ children }: LayoutProps) {
             className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
               mounted && !sidebarOpen && !isMobile ? 'justify-center' : ''
             } ${
-              pathname === '/profile'
+              mounted && pathname === '/profile'
                 ? 'bg-primary-100 text-primary-700 shadow-sm ring-1 ring-primary-200 dark:bg-primary-900/40 dark:text-primary-200 dark:ring-primary-700'
                 : 'text-gray-700 hover:bg-gray-100 hover:text-primary-600 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-primary-300'
             }`}
@@ -405,6 +386,21 @@ export default function Layout({ children }: LayoutProps) {
           </button>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            {mounted && (
+              <Link
+                href="/settings"
+                prefetch={true}
+                title="Settings"
+                className={`p-2 rounded-lg transition-all duration-200 ${
+                  pathname === '/settings' || pathname.startsWith('/settings/')
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200'
+                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                }`}
+                aria-label="Settings"
+              >
+                <Settings size={20} />
+              </Link>
+            )}
             <NotificationBell />
           </div>
         </div>

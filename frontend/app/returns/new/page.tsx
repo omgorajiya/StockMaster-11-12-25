@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService, ReturnItem } from '@/lib/operations';
 import { productService, Warehouse, Product } from '@/lib/products';
 import { Save, X, Plus, Trash2 } from 'lucide-react';
@@ -161,7 +160,7 @@ export default function NewReturnPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Create New Return</h1>
@@ -270,7 +269,7 @@ export default function NewReturnPage() {
             </div>
 
             {items.length === 0 ? (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-8">No items added. Click "Add Item" to start.</p>
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">No items added. Click “Add Item” to start.</p>
             ) : (
               <div className="space-y-4">
                 {items.map((item, index) => (
@@ -350,6 +349,6 @@ export default function NewReturnPage() {
           </div>
         </form>
       </div>
-    </Layout>
+    </>
   );
 }

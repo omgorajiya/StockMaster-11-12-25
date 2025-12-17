@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Layout from '@/components/Layout';
 import {
   analyticsService,
   AnalyticsDashboard,
@@ -75,17 +74,17 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <div className="text-center py-8 text-gray-500">Loading analytics...</div>
-      </Layout>
+      </>
     );
   }
 
   if (!analytics) {
     return (
-      <Layout>
+      <>
         <div className="text-center py-8 text-gray-500">No analytics data available</div>
-      </Layout>
+      </>
     );
   }
 
@@ -121,7 +120,7 @@ export default function AnalyticsPage() {
   const matrixBuckets = ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ'];
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Analytics</h1>
@@ -485,6 +484,6 @@ export default function AnalyticsPage() {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

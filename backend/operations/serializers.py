@@ -52,6 +52,28 @@ class ReceiptCreateSerializer(serializers.ModelSerializer):
         
         receipt = Receipt.objects.create(**validated_data)
 
+        # Evaluate approval policy based on total received quantity.
+        try:
+            from decimal import Decimal
+            from .policies import requires_approval
+
+            total_qty = Decimal('0.00')
+            for entry in items_data:
+                qty = entry.get('quantity_received') or Decimal('0.00')
+                factor = getattr(entry.get('product'), 'unit_conversion_factor', None) or Decimal('1.0')
+                if entry.get('unit_of_measure') == 'purchase':
+                    qty = qty * factor
+                total_qty += Decimal(qty)
+
+            receipt.requires_approval = requires_approval(
+                document_type='receipt',
+                warehouse=receipt.warehouse,
+                total_quantity=total_qty,
+            )
+            receipt.save(update_fields=['requires_approval'])
+        except Exception:
+            pass
+
         for item_data in items_data:
             # Validate product exists
             product = item_data.get('product')
@@ -133,6 +155,22 @@ class ReturnOrderCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'items': 'At least one item is required'})
         
         return_order = ReturnOrder.objects.create(**validated_data)
+
+        # Evaluate approval policy based on total returned quantity.
+        try:
+            from decimal import Decimal
+            from .policies import requires_approval
+
+            total_qty = sum([Decimal(str(entry.get('quantity') or 0)) for entry in items_data], Decimal('0.00'))
+            return_order.requires_approval = requires_approval(
+                document_type='return',
+                warehouse=return_order.warehouse,
+                total_quantity=total_qty,
+            )
+            return_order.save(update_fields=['requires_approval'])
+        except Exception:
+            pass
+
         for item_data in items_data:
             # Validate product exists
             product = item_data.get('product')
@@ -172,6 +210,29 @@ class DeliveryOrderCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'items': 'At least one item is required'})
         
         delivery = DeliveryOrder.objects.create(**validated_data)
+
+        # Evaluate approval policy based on total shipped quantity.
+        try:
+            from decimal import Decimal
+            from .policies import requires_approval
+
+            total_qty = Decimal('0.00')
+            for entry in items_data:
+                qty = entry.get('quantity') or Decimal('0.00')
+                factor = getattr(entry.get('product'), 'unit_conversion_factor', None) or Decimal('1.0')
+                if entry.get('unit_of_measure') == 'purchase':
+                    qty = qty * factor
+                total_qty += Decimal(qty)
+
+            delivery.requires_approval = requires_approval(
+                document_type='delivery',
+                warehouse=delivery.warehouse,
+                total_quantity=total_qty,
+            )
+            delivery.save(update_fields=['requires_approval'])
+        except Exception:
+            pass
+
         for item_data in items_data:
             # Validate product exists
             product = item_data.get('product')
@@ -223,6 +284,29 @@ class InternalTransferCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'items': 'At least one item is required'})
         
         transfer = InternalTransfer.objects.create(**validated_data)
+
+        # Evaluate approval policy based on total transfer quantity.
+        try:
+            from decimal import Decimal
+            from .policies import requires_approval
+
+            total_qty = Decimal('0.00')
+            for entry in items_data:
+                qty = entry.get('quantity') or Decimal('0.00')
+                factor = getattr(entry.get('product'), 'unit_conversion_factor', None) or Decimal('1.0')
+                if entry.get('unit_of_measure') == 'purchase':
+                    qty = qty * factor
+                total_qty += Decimal(qty)
+
+            transfer.requires_approval = requires_approval(
+                document_type='transfer',
+                warehouse=transfer.warehouse,
+                total_quantity=total_qty,
+            )
+            transfer.save(update_fields=['requires_approval'])
+        except Exception:
+            pass
+
         for item_data in items_data:
             # Validate product exists
             product = item_data.get('product')
@@ -272,6 +356,33 @@ class StockAdjustmentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'items': 'At least one item is required'})
         
         adjustment = StockAdjustment.objects.create(**validated_data)
+
+        # Evaluate approval policy based on absolute total quantity delta.
+        try:
+            from decimal import Decimal
+            from .policies import requires_approval
+
+            total_delta = Decimal('0.00')
+            adjustment_type = adjustment.adjustment_type
+            for entry in items_data:
+                adj_qty = Decimal(str(entry.get('adjustment_quantity') or 0))
+                current_qty = Decimal(str(entry.get('current_quantity') or 0))
+
+                if adjustment_type in ['increase', 'decrease']:
+                    delta = adj_qty
+                else:
+                    delta = abs(adj_qty - current_qty)
+                total_delta += abs(delta)
+
+            adjustment.requires_approval = requires_approval(
+                document_type='adjustment',
+                warehouse=adjustment.warehouse,
+                total_quantity=total_delta,
+            )
+            adjustment.save(update_fields=['requires_approval'])
+        except Exception:
+            pass
+
         for item_data in items_data:
             # Validate product exists
             product = item_data.get('product')
@@ -484,7 +595,13 @@ class PickWaveCreateSerializer(serializers.ModelSerializer):
         
         if delivery_order_ids:
             from .models import DeliveryOrder
-            delivery_orders = DeliveryOrder.objects.filter(id__in=delivery_order_ids)
+            from accounts.scoping import scope_queryset
+
+            delivery_orders = scope_queryset(
+                DeliveryOrder.objects.filter(id__in=delivery_order_ids),
+                user,
+                warehouse_fields=('warehouse',),
+            )
             pick_wave.delivery_orders.set(delivery_orders)
         
         return pick_wave
@@ -543,6 +660,8 @@ class SavedViewSerializer(serializers.ModelSerializer):
 
 class AuditLogSerializer(serializers.ModelSerializer):
     user_email = serializers.CharField(source='user.email', read_only=True)
+    warehouse_name = serializers.CharField(source='warehouse.name', read_only=True)
+    warehouse_code = serializers.CharField(source='warehouse.code', read_only=True)
 
     class Meta:
         model = AuditLog

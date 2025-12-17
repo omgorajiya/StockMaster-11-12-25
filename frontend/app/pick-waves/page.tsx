@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { operationsService, PickWave } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, GitMerge } from 'lucide-react';
+import { Plus, GitMerge, Pencil } from 'lucide-react';
+import StatusEditModal from '@/components/StatusEditModal';
 import Link from 'next/link';
 
 export default function PickWavesPage() {
@@ -13,6 +13,15 @@ export default function PickWavesPage() {
   const [statusFilter, setStatusFilter] = useState<PickWave['status'] | ''>('');
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [editWave, setEditWave] = useState<{ id: number; name: string; status: string } | null>(null);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  const statusOptions = [
+    { value: 'planned', label: 'Planned' },
+    { value: 'picking', label: 'Picking' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'canceled', label: 'Canceled' },
+  ];
 
   useEffect(() => {
     loadWarehouses();
@@ -46,6 +55,24 @@ export default function PickWavesPage() {
     }
   };
 
+  const handleSaveStatus = async (newStatus: string) => {
+    if (!editWave) return;
+
+    setSavingStatus(true);
+    try {
+      await operationsService.updatePickWave(editWave.id, { status: newStatus as any });
+      const { showToast } = await import('@/lib/toast');
+      showToast.success('Pick wave status updated');
+      setEditWave(null);
+      loadPickWaves();
+    } catch (error: any) {
+      const { showToast } = await import('@/lib/toast');
+      showToast.error(error.response?.data?.message || 'Failed to update pick wave status');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   const getStatusBadgeClasses = (status: PickWave['status']) => {
     switch (status) {
       case 'completed':
@@ -62,7 +89,7 @@ export default function PickWavesPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Pick Waves</h1>
@@ -116,12 +143,13 @@ export default function PickWavesPage() {
                     <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Orders</th>
                     <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Status</th>
                     <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Created</th>
+                    <th className="text-right p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pickWaves.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center p-12">
+                      <td colSpan={6} className="text-center p-12">
                         <div className="flex flex-col items-center gap-3">
                           <GitMerge size={48} className="text-gray-400" />
                           <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No pick waves found</p>
@@ -157,6 +185,15 @@ export default function PickWavesPage() {
                         <td className="p-3 text-gray-600">
                           {new Date(wave.created_at).toLocaleDateString()}
                         </td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => setEditWave({ id: wave.id, name: wave.name, status: wave.status })}
+                            className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
+                            title="Edit status"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -166,6 +203,15 @@ export default function PickWavesPage() {
           )}
         </div>
       </div>
-    </Layout>
+      <StatusEditModal
+        open={!!editWave}
+        title={`Edit Pick Wave ${editWave?.name || ''}`}
+        currentStatus={editWave?.status || 'planned'}
+        statusOptions={statusOptions}
+        saving={savingStatus}
+        onClose={() => setEditWave(null)}
+        onSave={handleSaveStatus}
+      />
+    </>
   );
 }

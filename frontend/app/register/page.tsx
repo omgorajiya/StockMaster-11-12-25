@@ -7,11 +7,6 @@ import Link from 'next/link';
 import { Activity, ShieldCheck } from 'lucide-react';
 import { AuthTopBar } from '@/components/AuthTopBar';
 
-const ROLES = [
-  { value: 'inventory_manager', label: 'Inventory Manager' },
-  { value: 'warehouse_staff', label: 'Warehouse Staff' },
-  { value: 'admin', label: 'Admin' },
-];
 
 const strengthLabels = ['Weak', 'Okay', 'Fair', 'Good', 'Strong'];
 
@@ -28,12 +23,12 @@ const passwordScore = (password: string) => {
 export default function RegisterPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
+    invite_token: '',
     email: '',
     username: '',
     password: '',
     password_confirm: '',
     phone: '',
-    role: 'warehouse_staff',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -100,6 +95,20 @@ export default function RegisterPage() {
             )}
 
             <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Invite code</label>
+              <input
+                type="text"
+                value={formData.invite_token}
+                onChange={(e) => setFormData({ ...formData, invite_token: e.target.value })}
+                className="mt-1 w-full rounded-2xl border border-gray-200 dark:border-gray-700 bg-transparent px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Paste your invite code (if your org requires one)"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Most companies use invite-only onboarding. If registration fails, ask your admin for an invite.
+              </p>
+            </div>
+
+            <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Work email</label>
               <input
                 type="email"
@@ -134,23 +143,6 @@ export default function RegisterPage() {
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Role</label>
-              <select
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="mt-1 w-full rounded-2xl border border-gray-200 dark:border-gray-700 bg-transparent px-4 py-3 text-gray-900 dark:text-white focus:ring-primary-500"
-              >
-                {ROLES.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-gray-500">
-                Determines default permissions; fine-tune later under Settings → Users.
-              </p>
-            </div>
 
             <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Password</label>

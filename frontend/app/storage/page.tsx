@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
-import { productService, Product, StockItem, Category } from '@/lib/products';
+import { productService, Product, StockItem, Category, Warehouse } from '@/lib/products';
 import { Warehouse as WarehouseIcon, Search, Filter, PackageSearch, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
@@ -17,18 +16,35 @@ export default function StoragePage() {
   const [search, setSearch] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [warehouseFilter, setWarehouseFilter] = useState('');
+
+  // When a warehouse is selected, we fetch stock-items for that warehouse and build a
+  // productId -> quantity map. Relying on embedded product.stock_items is unreliable
+  // because the /products/products/ list response may not include them.
+  const [warehouseStockByProduct, setWarehouseStockByProduct] = useState<Record<number, number>>({});
 
   useEffect(() => {
     loadInitial();
   }, []);
 
+  useEffect(() => {
+    if (!warehouseFilter) {
+      setWarehouseStockByProduct({});
+      return;
+    }
+    loadWarehouseStock(Number(warehouseFilter));
+  }, [warehouseFilter]);
+
   const loadInitial = async () => {
     try {
       setLoading(true);
-      const [productResponse, categoryData] = await Promise.all([
+      const [productResponse, categoryData, warehouseData] = await Promise.all([
         productService.getProducts(),
         productService.getCategories(),
+        productService.getWarehouses(),
       ]);
+
       const baseProducts = (productResponse.results || productResponse) as Product[];
       setProducts(
         baseProducts.map((p) => ({
@@ -38,10 +54,33 @@ export default function StoragePage() {
         })),
       );
       setCategories(categoryData);
+      setWarehouses(warehouseData);
+
+      // If a warehouse filter is already selected (e.g. via state restore), load its stock map
+      if (warehouseFilter) {
+        await loadWarehouseStock(Number(warehouseFilter));
+      }
     } catch (error) {
       console.error('Failed to load storage data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadWarehouseStock = async (warehouseId: number) => {
+    try {
+      const items = await productService.getStockItems({ warehouse: warehouseId });
+      const next: Record<number, number> = {};
+      for (const si of items) {
+        // If multiple records exist per product (e.g. bins), accumulate them.
+        const pid = Number((si as any).product ?? (si as any).product_id);
+        if (!Number.isFinite(pid)) continue;
+        next[pid] = (next[pid] || 0) + Number(si.quantity || 0);
+      }
+      setWarehouseStockByProduct(next);
+    } catch (error) {
+      console.error('Failed to load warehouse stock:', error);
+      setWarehouseStockByProduct({});
     }
   };
 
@@ -50,13 +89,25 @@ export default function StoragePage() {
       !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase());
+
+    // Category filter: compare safely even if API sends string/null
     const matchesCategory =
-      !categoryFilter || String(p.category || '') === categoryFilter;
-    return matchesSearch && matchesCategory;
+      !categoryFilter || (p.category !== null && p.category !== undefined && Number(p.category) === Number(categoryFilter));
+
+    // Warehouse filter: use stock-items endpoint (product list may not include stock_items)
+    const matchesWarehouse =
+      !warehouseFilter || Object.prototype.hasOwnProperty.call(warehouseStockByProduct, Number(p.id));
+
+    return matchesSearch && matchesCategory && matchesWarehouse;
   });
 
+  const getDisplayedStock = (p: EnrichedProduct) => {
+    if (!warehouseFilter) return Number(p.total_stock || 0);
+    return Number(warehouseStockByProduct[Number(p.id)] || 0);
+  };
+
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -99,6 +150,18 @@ export default function StoragePage() {
                   </option>
                 ))}
               </select>
+              <select
+                value={warehouseFilter}
+                onChange={(e) => setWarehouseFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
+              >
+                <option value="">All warehouses</option>
+                {warehouses.map((wh) => (
+                  <option key={wh.id} value={wh.id}>
+                    {wh.name} ({wh.code})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -116,12 +179,13 @@ export default function StoragePage() {
               <div className="block sm:hidden space-y-3">
                 {filtered.map((p) => {
                   const unitLabel = p.stock_unit_detail?.code || p.stock_unit_detail?.name || '';
-                  const low = p.is_low_stock;
+                  const displayedStock = getDisplayedStock(p);
+                  const low = displayedStock < Number(p.reorder_level || 0);
                   const capacity = Math.max(
                     Number(p.reorder_level || 0) + Number(p.reorder_quantity || 0),
                     1,
                   );
-                  const ratio = Math.min(1, (p.total_stock || 0) / capacity);
+                  const ratio = Math.min(1, displayedStock / capacity);
 
                   return (
                     <Link
@@ -156,7 +220,7 @@ export default function StoragePage() {
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-gray-500">Stock:</span>
                           <span className={`font-semibold ${low ? 'text-amber-700' : 'text-gray-900'}`}>
-                            {p.total_stock || 0} {unitLabel}
+                            {displayedStock} {unitLabel}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs">
@@ -193,12 +257,13 @@ export default function StoragePage() {
                   <tbody>
                     {filtered.map((p) => {
                       const unitLabel = p.stock_unit_detail?.code || p.stock_unit_detail?.name || '';
-                      const low = p.is_low_stock;
+                      const displayedStock = getDisplayedStock(p);
+                      const low = displayedStock < Number(p.reorder_level || 0);
                       const capacity = Math.max(
                         Number(p.reorder_level || 0) + Number(p.reorder_quantity || 0),
                         1,
                       );
-                      const ratio = Math.min(1, (p.total_stock || 0) / capacity);
+                      const ratio = Math.min(1, displayedStock / capacity);
 
                       return (
                         <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
@@ -215,7 +280,7 @@ export default function StoragePage() {
                           <td className="py-2 px-3 text-right">
                             <div className="flex flex-col items-end gap-1">
                               <span className={`font-semibold ${low ? 'text-amber-700' : 'text-gray-900'}`}>
-                                {p.total_stock || 0} {unitLabel}
+                                {displayedStock} {unitLabel}
                               </span>
                               <div className="w-32 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                                 <div
@@ -260,7 +325,7 @@ export default function StoragePage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { operationsService, StockAdjustment } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, CheckCircle, MessageSquare, Sliders } from 'lucide-react';
+import { Plus, CheckCircle, MessageSquare, Sliders, Pencil } from 'lucide-react';
+import StatusEditModal from '@/components/StatusEditModal';
 import Link from 'next/link';
 import SavedViewToolbar from '@/components/SavedViewToolbar';
 import DocumentCollaborationPanel from '@/components/DocumentCollaborationPanel';
@@ -16,6 +16,16 @@ export default function AdjustmentsPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   const [collabDoc, setCollabDoc] = useState<{ id: number; number: string } | null>(null);
+  const [editDoc, setEditDoc] = useState<{ id: number; number: string; status: string } | null>(null);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  const statusOptions = [
+    { value: 'draft', label: 'Draft' },
+    { value: 'waiting', label: 'Waiting' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'done', label: 'Done' },
+    { value: 'canceled', label: 'Canceled' },
+  ];
 
   useEffect(() => {
     loadWarehouses();
@@ -70,8 +80,26 @@ export default function AdjustmentsPage() {
     setWarehouseFilter(filters.warehouse ? String(filters.warehouse) : '');
   };
 
+  const handleSaveStatus = async (newStatus: string) => {
+    if (!editDoc) return;
+
+    setSavingStatus(true);
+    try {
+      await operationsService.updateAdjustment(editDoc.id, { status: newStatus as any });
+      const { showToast } = await import('@/lib/toast');
+      showToast.success('Adjustment status updated');
+      setEditDoc(null);
+      loadAdjustments();
+    } catch (error: any) {
+      const { showToast } = await import('@/lib/toast');
+      showToast.error(error.response?.data?.message || 'Failed to update adjustment status');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Stock Adjustments</h1>
@@ -186,6 +214,15 @@ export default function AdjustmentsPage() {
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
+                              onClick={() =>
+                                setEditDoc({ id: adjustment.id, number: adjustment.document_number, status: adjustment.status })
+                              }
+                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
+                              title="Edit status"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
                               onClick={() => setCollabDoc({ id: adjustment.id, number: adjustment.document_number })}
                               className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
                               title="Open collaboration panel"
@@ -212,6 +249,15 @@ export default function AdjustmentsPage() {
           )}
         </div>
       </div>
+      <StatusEditModal
+        open={!!editDoc}
+        title={`Edit Adjustment ${editDoc?.number || ''}`}
+        currentStatus={editDoc?.status || 'draft'}
+        statusOptions={statusOptions}
+        saving={savingStatus}
+        onClose={() => setEditDoc(null)}
+        onSave={handleSaveStatus}
+      />
       <DocumentCollaborationPanel
         open={!!collabDoc}
         documentType="adjustment"
@@ -219,6 +265,6 @@ export default function AdjustmentsPage() {
         documentNumber={collabDoc?.number}
         onClose={() => setCollabDoc(null)}
       />
-    </Layout>
+    </>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { ledgerService, StockLedgerEntry } from '@/lib/ledger';
 import { productService, Warehouse } from '@/lib/products';
 import { Filter, Search, History } from 'lucide-react';
@@ -13,6 +12,8 @@ export default function HistoryPage() {
   const [filters, setFilters] = useState({
     transaction_type: '',
     warehouse: '',
+    date_from: '',
+    date_to: '',
   });
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounce(searchInput, 500);
@@ -40,6 +41,8 @@ export default function HistoryPage() {
       const params: any = {};
       if (filters.transaction_type) params.transaction_type = filters.transaction_type;
       if (filters.warehouse) params.warehouse = parseInt(filters.warehouse);
+      if (filters.date_from) params.date_from = filters.date_from;
+      if (filters.date_to) params.date_to = filters.date_to;
       if (debouncedSearch) params.search = debouncedSearch;
       
       const data = await ledgerService.getLedger(params);
@@ -71,7 +74,7 @@ export default function HistoryPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Move History</h1>
 
@@ -81,7 +84,7 @@ export default function HistoryPage() {
             <Filter size={20} className="text-gray-500" />
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Filters</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Transaction Type
@@ -132,10 +135,32 @@ export default function HistoryPage() {
                 />
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Date From
+              </label>
+              <input
+                type="date"
+                value={filters.date_from}
+                onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Date To
+              </label>
+              <input
+                type="date"
+                value={filters.date_to}
+                onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              />
+            </div>
             <div className="flex items-end">
               <button
                 onClick={() => {
-                  setFilters({ transaction_type: '', warehouse: '' });
+                  setFilters({ transaction_type: '', warehouse: '', date_from: '', date_to: '' });
                   setSearchInput('');
                 }}
                 className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 hover:shadow-sm"
@@ -224,7 +249,7 @@ export default function HistoryPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

@@ -268,6 +268,11 @@ export const operationsService = {
     return response.data;
   },
 
+  async updateReceipt(id: number, data: Partial<Receipt>): Promise<Receipt> {
+    const response = await api.patch(`/operations/receipts/${id}/`, data);
+    return response.data;
+  },
+
   async validateReceipt(id: number): Promise<{ success: boolean; message: string }> {
     const response = await api.post(`/operations/receipts/${id}/validate/`);
     return response.data;
@@ -293,6 +298,11 @@ export const operationsService = {
 
   async createDelivery(data: Partial<DeliveryOrder>): Promise<DeliveryOrder> {
     const response = await api.post('/operations/deliveries/', data);
+    return response.data;
+  },
+
+  async updateDelivery(id: number, data: Partial<DeliveryOrder>): Promise<DeliveryOrder> {
+    const response = await api.patch(`/operations/deliveries/${id}/`, data);
     return response.data;
   },
 
@@ -322,6 +332,11 @@ export const operationsService = {
     return response.data;
   },
 
+  async updateTransfer(id: number, data: Partial<InternalTransfer>): Promise<InternalTransfer> {
+    const response = await api.patch(`/operations/transfers/${id}/`, data);
+    return response.data;
+  },
+
   async validateTransfer(id: number): Promise<{ success: boolean; message: string }> {
     const response = await api.post(`/operations/transfers/${id}/validate/`);
     return response.data;
@@ -348,6 +363,11 @@ export const operationsService = {
     return response.data;
   },
 
+  async updateReturn(id: number, data: Partial<ReturnOrder>): Promise<ReturnOrder> {
+    const response = await api.patch(`/operations/returns/${id}/`, data);
+    return response.data;
+  },
+
   async validateReturn(id: number): Promise<{ success: boolean; message: string }> {
     const response = await api.post(`/operations/returns/${id}/validate/`);
     return response.data;
@@ -371,6 +391,11 @@ export const operationsService = {
 
   async createAdjustment(data: Partial<StockAdjustment>): Promise<StockAdjustment> {
     const response = await api.post('/operations/adjustments/', data);
+    return response.data;
+  },
+
+  async updateAdjustment(id: number, data: Partial<StockAdjustment>): Promise<StockAdjustment> {
+    const response = await api.patch(`/operations/adjustments/${id}/`, data);
     return response.data;
   },
 
@@ -403,6 +428,11 @@ export const operationsService = {
     items?: number[]; // product IDs (required for partial, optional for full/abc)
   }): Promise<CycleCountTask> {
     const response = await api.post('/operations/cycle-counts/', data);
+    return response.data;
+  },
+
+  async updateCycleCount(id: number, data: Partial<CycleCountTask>): Promise<CycleCountTask> {
+    const response = await api.patch(`/operations/cycle-counts/${id}/`, data);
     return response.data;
   },
 
@@ -447,6 +477,11 @@ export const operationsService = {
 
   async createPickWave(data: Partial<PickWave> & { delivery_orders?: number[] }): Promise<PickWave> {
     const response = await api.post('/operations/pick-waves/', data);
+    return response.data;
+  },
+
+  async updatePickWave(id: number, data: Partial<PickWave>): Promise<PickWave> {
+    const response = await api.patch(`/operations/pick-waves/${id}/`, data);
     return response.data;
   },
 

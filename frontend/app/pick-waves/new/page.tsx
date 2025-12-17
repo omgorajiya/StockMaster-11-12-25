@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
 import { showToast } from '@/lib/toast';
@@ -93,7 +92,7 @@ export default function NewPickWavePage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Create New Pick Wave</h1>
@@ -197,6 +196,6 @@ export default function NewPickWavePage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

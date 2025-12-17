@@ -12,6 +12,7 @@ def log_audit_event(
     message: str = '',
     before: Dict[str, Any] | None = None,
     after: Dict[str, Any] | None = None,
+    warehouse=None,
 ) -> AuditLog:
     """Persist an audit entry."""
     return AuditLog.objects.create(
@@ -19,6 +20,7 @@ def log_audit_event(
         document_id=document_id,
         action=action,
         user=user,
+        warehouse=warehouse,
         message=message,
         before_data=before,
         after_data=after,

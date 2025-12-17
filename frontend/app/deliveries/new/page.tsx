@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { operationsService, DeliveryItem } from '@/lib/operations';
-import { productService, Warehouse, Product, BinLocation } from '@/lib/products';
+import { productService, Warehouse, Product, BinLocation, Category } from '@/lib/products';
 import { Save, X, Plus, Trash2, Scan } from 'lucide-react';
 import Link from 'next/link';
 import BarcodeScanner from '@/components/BarcodeScanner';
@@ -14,6 +13,7 @@ export default function NewDeliveryPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [bins, setBins] = useState<BinLocation[]>([]);
   const [items, setItems] = useState<DeliveryItem[]>([]);
@@ -23,18 +23,46 @@ export default function NewDeliveryPage() {
   const [productStockCache, setProductStockCache] = useState<Record<number, Record<number, { quantity: number; reserved: number; available: number }>>>({});
   const [formData, setFormData] = useState({
     warehouse: '',
+    category: '',
     customer: '',
-    customer_reference: '',
     shipping_address: '',
     notes: '',
-    status: 'draft' as 'draft' | 'waiting' | 'ready',
+    status: 'draft' as const,
   });
   const [error, setError] = useState('');
 
   useEffect(() => {
     loadWarehouses();
+    loadCategories();
     loadProducts();
   }, []);
+
+  // Load stock for products in selected category and warehouse
+  useEffect(() => {
+    const loadStockForFilteredProducts = async () => {
+      if (!formData.warehouse || !formData.category || products.length === 0) {
+        return;
+      }
+      
+      const warehouseId = parseInt(formData.warehouse);
+      const categoryId = parseInt(formData.category);
+      
+      // Filter products by category
+      const categoryProducts = products.filter(
+        (p) => p.category && Number(p.category) === categoryId
+      );
+      
+      // Load stock for all products in this category and warehouse
+      if (categoryProducts.length > 0) {
+        await Promise.all(
+          categoryProducts.map((product) => loadProductStock(product.id, warehouseId))
+        );
+      }
+    };
+    
+    loadStockForFilteredProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.warehouse, formData.category, products.length]);
 
   const loadWarehouses = async () => {
     try {
@@ -42,6 +70,15 @@ export default function NewDeliveryPage() {
       setWarehouses(data);
     } catch (error) {
       console.error('Failed to load warehouses:', error);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const data = await productService.getCategories();
+      setCategories(data);
+    } catch (error) {
+      console.error('Failed to load categories:', error);
     }
   };
 
@@ -150,6 +187,37 @@ export default function NewDeliveryPage() {
     return productStockCache[productId]?.[warehouseId] || null;
   };
 
+  // Get filtered products based on selected warehouse and category
+  const getFilteredProducts = (): Product[] => {
+    if (!formData.warehouse || !formData.category) {
+      return [];
+    }
+    
+    const warehouseId = parseInt(formData.warehouse);
+    const categoryId = parseInt(formData.category);
+    
+    return products.filter((product) => {
+      // Must match selected category
+      if (!product.category || Number(product.category) !== categoryId) {
+        return false;
+      }
+      
+      // Must have stock in selected warehouse
+      // Check cache first (most reliable)
+      const cachedStock = getProductStock(product.id, warehouseId);
+      if (cachedStock && cachedStock.quantity > 0) {
+        return true;
+      }
+      
+      // Fallback: Check if product has stock_items with the selected warehouse
+      const hasStockInWarehouse = (product.stock_items || []).some(
+        (si) => si.warehouse && Number(si.warehouse) === warehouseId && (si.quantity || 0) > 0
+      );
+      
+      return hasStockInWarehouse;
+    });
+  };
+
   // Validate delivery quantity - returns validation result without modifying the value
   const validateDeliveryQuantity = (
     productId: number, 
@@ -213,6 +281,17 @@ export default function NewDeliveryPage() {
   };
 
   const addItem = () => {
+    // Validate warehouse and category are selected before adding item
+    if (!formData.warehouse) {
+      setError('Please select a warehouse before adding items');
+      return;
+    }
+    if (!formData.category) {
+      setError('Please select a category before adding items');
+      return;
+    }
+    
+    setError('');
     setItems([
       ...items,
       {
@@ -246,8 +325,35 @@ export default function NewDeliveryPage() {
 
   const handleScanResult = async (barcode: string) => {
     if (scannerItemIndex === null) return;
+    
+    // Validate warehouse and category are selected
+    if (!formData.warehouse || !formData.category) {
+      showToast.error('Please select warehouse and category before scanning');
+      setScannerItemIndex(null);
+      return;
+    }
+    
     try {
       const product = await productService.lookupProduct({ barcode });
+      
+      // Verify product matches selected category
+      if (!product.category || Number(product.category) !== parseInt(formData.category)) {
+        showToast.error(`Product ${product.name} does not belong to the selected category`);
+        setScannerItemIndex(null);
+        return;
+      }
+      
+      // Verify product has stock in selected warehouse
+      const warehouseId = parseInt(formData.warehouse);
+      await loadProductStock(product.id, warehouseId);
+      const stock = getProductStock(product.id, warehouseId);
+      
+      if (!stock || stock.quantity <= 0) {
+        showToast.error(`Product ${product.name} has no stock in the selected warehouse`);
+        setScannerItemIndex(null);
+        return;
+      }
+      
       updateItem(scannerItemIndex, 'product', product.id);
       showToast.success(`Selected ${product.name}`);
     } catch (error) {
@@ -265,6 +371,10 @@ export default function NewDeliveryPage() {
     }
     if (!formData.warehouse) {
       setError('Please select a warehouse');
+      return;
+    }
+    if (!formData.category) {
+      setError('Please select a category');
       return;
     }
     if (!formData.customer) {
@@ -411,7 +521,7 @@ export default function NewDeliveryPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Create New Delivery</h1>
@@ -442,13 +552,21 @@ export default function NewDeliveryPage() {
                 onChange={async (e) => {
                   const value = e.target.value;
                   setFormData({ ...formData, warehouse: value });
-                  setItems((prev) => prev.map((it) => ({ ...it, bin: null })));
+                  setItems((prev) => prev.map((it) => ({ ...it, bin: null, product: 0 })));
                   loadBinsForWarehouse(value);
                   
-                  // Load stock for all products in the selected warehouse
-                  if (value) {
+                  // Load stock for all products in the selected warehouse and category
+                  if (value && formData.category) {
                     const warehouseId = parseInt(value);
-                    // Load stock for all existing items
+                    const categoryId = parseInt(formData.category);
+                    // Load stock for all products in this category
+                    const categoryProducts = products.filter(
+                      (p) => p.category && Number(p.category) === categoryId
+                    );
+                    await Promise.all(
+                      categoryProducts.map((product) => loadProductStock(product.id, warehouseId))
+                    );
+                    // Also load stock for existing items
                     await Promise.all(
                       items
                         .filter(item => item.product > 0)
@@ -469,6 +587,43 @@ export default function NewDeliveryPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
+                Category *
+              </label>
+              <select
+                required
+                value={formData.category}
+                onChange={async (e) => {
+                  const value = e.target.value;
+                  setFormData({ ...formData, category: value });
+                  // Clear product selections when category changes
+                  setItems((prev) => prev.map((it) => ({ ...it, product: 0 })));
+                  
+                  // Load stock for all products in the selected category and warehouse
+                  if (value && formData.warehouse) {
+                    const warehouseId = parseInt(formData.warehouse);
+                    const categoryId = parseInt(value);
+                    // Load stock for all products in this category
+                    const categoryProducts = products.filter(
+                      (p) => p.category && Number(p.category) === categoryId
+                    );
+                    await Promise.all(
+                      categoryProducts.map((product) => loadProductStock(product.id, warehouseId))
+                    );
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value="">Select Category</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Customer *
               </label>
               <input
@@ -476,18 +631,6 @@ export default function NewDeliveryPage() {
                 required
                 value={formData.customer}
                 onChange={(e) => setFormData({ ...formData, customer: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Customer Reference
-              </label>
-              <input
-                type="text"
-                value={formData.customer_reference}
-                onChange={(e) => setFormData({ ...formData, customer_reference: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
@@ -575,6 +718,7 @@ export default function NewDeliveryPage() {
                         <select
                           required
                           value={item.product}
+                          disabled={!formData.warehouse || !formData.category}
                           onChange={async (e) => {
                             const productId = parseInt(e.target.value);
                             updateItem(index, 'product', productId);
@@ -587,15 +731,36 @@ export default function NewDeliveryPage() {
                               updateItem(index, 'quantity', 0);
                             }
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                            !formData.warehouse || !formData.category ? 'bg-gray-100 cursor-not-allowed' : ''
+                          }`}
                         >
-                          <option value="0">Select Product</option>
-                          {products.map((prod) => (
-                            <option key={prod.id} value={prod.id}>
-                              {prod.name} ({prod.sku})
-                            </option>
-                          ))}
+                          <option value="0">
+                            {!formData.warehouse || !formData.category
+                              ? 'Select Warehouse and Category first'
+                              : 'Select Product'}
+                          </option>
+                          {(() => {
+                            const filteredProducts = getFilteredProducts();
+                            if (filteredProducts.length === 0 && formData.warehouse && formData.category) {
+                              return (
+                                <option value="0" disabled>
+                                  No products available in this warehouse and category
+                                </option>
+                              );
+                            }
+                            return filteredProducts.map((prod) => (
+                              <option key={prod.id} value={prod.id}>
+                                {prod.name} ({prod.sku})
+                              </option>
+                            ));
+                          })()}
                         </select>
+                        {(!formData.warehouse || !formData.category) && (
+                          <p className="mt-1 text-xs text-amber-600">
+                            Please select both warehouse and category to choose products
+                          </p>
+                        )}
                         {scannerEnabled && (
                           <button
                             type="button"
@@ -717,7 +882,7 @@ export default function NewDeliveryPage() {
                         >
                           <option value="">{formData.warehouse ? 'No Bin' : 'Select warehouse first'}</option>
                           {bins
-                            .filter(bin => !formData.warehouse || bin.warehouse === parseInt(formData.warehouse))
+                            .filter(bin => !formData.warehouse || bin.warehouse === parseInt(formData.warehouse) || bin.warehouse_id === parseInt(formData.warehouse))
                             .map((bin) => (
                               <option key={bin.id} value={bin.id}>
                                 {bin.code} {bin.description ? `- ${bin.description}` : ''}
@@ -768,7 +933,7 @@ export default function NewDeliveryPage() {
       {scannerItemIndex !== null && scannerEnabled && (
         <BarcodeScanner onScan={handleScanResult} onClose={() => setScannerItemIndex(null)} />
       )}
-    </Layout>
+    </>
   );
 }
 

@@ -6,8 +6,13 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from accounts.permissions import IsWarehouseStaff, IsInventoryManager, IsAdmin
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
+from django.http import HttpResponse
+import csv
+
+from accounts.permissions import IsAdmin, capability_required
+from accounts.scoping import WarehouseScopedQuerySetMixin, scope_queryset
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
@@ -52,14 +57,39 @@ def _emit_integration_event(event_type: str, payload: dict):
         logger.exception("Failed to emit integration event %s", event_type)
 
 
-class ReceiptViewSet(viewsets.ModelViewSet):
+class CapabilityPermissionsMixin:
+    """Centralized per-action capability enforcement (backend source of truth)."""
+
+    permission_action_map: dict[str, str] = {}
+    default_capability: str | None = None
+
+    def get_permissions(self):
+        capability = self.permission_action_map.get(getattr(self, 'action', ''), self.default_capability)
+        if capability:
+            return [IsAuthenticated(), capability_required(capability)()]
+        return [IsAuthenticated()]
+
+
+class ReceiptViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Receipt CRUD operations"""
+
     queryset = Receipt.objects.select_related('warehouse', 'created_by').prefetch_related('items__product')
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'warehouse', 'created_by']
     search_fields = ['document_number', 'supplier']
     ordering_fields = ['created_at', 'document_number']
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'approve': 'ops.approve',
+        'validate': 'ops.validate',
+    }
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -139,6 +169,7 @@ class ReceiptViewSet(viewsets.ModelViewSet):
                 message='Receipt validated',
                 before={'status': previous_status},
                 after={'status': receipt.status},
+                warehouse=receipt.warehouse,
             )
         
         return Response({
@@ -147,10 +178,22 @@ class ReceiptViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK if success else status.HTTP_400_BAD_REQUEST)
 
 
-class DeliveryOrderViewSet(viewsets.ModelViewSet):
+class DeliveryOrderViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Delivery Order CRUD operations"""
+
     queryset = DeliveryOrder.objects.select_related('warehouse', 'created_by').prefetch_related('items__product')
     permission_classes = [IsAuthenticated]
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'approve': 'ops.approve',
+        'validate': 'ops.validate',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     # Include pick_waves so we can filter deliveries that belong to a specific
     # wave, enabling the pick-wave detail page to show only relevant orders.
@@ -229,13 +272,14 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
             _emit_integration_event('delivery_completed', payload)
             _emit_integration_event('stock_change', {**payload, 'source': 'delivery'})
             log_audit_event(
-                document_type='deliveryorder',
+                document_type='delivery',
                 document_id=delivery.id,
                 action='validation',
                 user=request.user,
                 message='Delivery completed',
                 before={'status': previous_status},
                 after={'status': delivery.status},
+                warehouse=delivery.warehouse,
             )
         
         return Response({
@@ -244,10 +288,22 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK if success else status.HTTP_400_BAD_REQUEST)
 
 
-class ReturnOrderViewSet(viewsets.ModelViewSet):
+class ReturnOrderViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Customer returns (RMA) management"""
+
     queryset = ReturnOrder.objects.select_related('warehouse', 'created_by', 'delivery_order').prefetch_related('items__product')
     permission_classes = [IsAuthenticated]
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'approve': 'ops.approve',
+        'validate': 'ops.validate',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'warehouse', 'created_by', 'delivery_order']
     search_fields = ['document_number']
@@ -336,13 +392,14 @@ class ReturnOrderViewSet(viewsets.ModelViewSet):
 
         if success:
             log_audit_event(
-                document_type='returnorder',
+                document_type='return',
                 document_id=return_order.id,
                 action='validation',
                 user=request.user,
                 message='Return processed',
                 before={'status': previous_status},
                 after={'status': return_order.status},
+                warehouse=target_warehouse,
             )
 
         return Response(
@@ -351,10 +408,25 @@ class ReturnOrderViewSet(viewsets.ModelViewSet):
         )
 
 
-class InternalTransferViewSet(viewsets.ModelViewSet):
+class InternalTransferViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Internal Transfer CRUD operations"""
+
     queryset = InternalTransfer.objects.select_related('warehouse', 'to_warehouse', 'created_by').prefetch_related('items__product')
     permission_classes = [IsAuthenticated]
+
+    # Transfers are accessible if the user can access either side.
+    warehouse_fields = ('warehouse', 'to_warehouse')
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'approve': 'ops.approve',
+        'validate': 'ops.validate',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'warehouse', 'to_warehouse', 'created_by']
     search_fields = ['document_number']
@@ -458,13 +530,14 @@ class InternalTransferViewSet(viewsets.ModelViewSet):
             _emit_integration_event('transfer_completed', payload)
             _emit_integration_event('stock_change', {**payload, 'source': 'transfer'})
             log_audit_event(
-                document_type='internaltransfer',
+                document_type='transfer',
                 document_id=transfer.id,
                 action='validation',
                 user=request.user,
                 message='Transfer completed',
                 before={'status': previous_status},
                 after={'status': transfer.status},
+                warehouse=transfer.warehouse,
             )
         
         return Response({
@@ -473,10 +546,22 @@ class InternalTransferViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK if success else status.HTTP_400_BAD_REQUEST)
 
 
-class StockAdjustmentViewSet(viewsets.ModelViewSet):
+class StockAdjustmentViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Stock Adjustment CRUD operations"""
+
     queryset = StockAdjustment.objects.select_related('warehouse', 'created_by').prefetch_related('items__product')
     permission_classes = [IsAuthenticated]
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'approve': 'ops.approve',
+        'validate': 'ops.validate',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'warehouse', 'adjustment_type', 'created_by']
     search_fields = ['document_number', 'reason']
@@ -556,13 +641,14 @@ class StockAdjustmentViewSet(viewsets.ModelViewSet):
             _emit_integration_event('adjustment_completed', payload)
             _emit_integration_event('stock_change', {**payload, 'source': 'adjustment'})
             log_audit_event(
-                document_type='stockadjustment',
+                document_type='adjustment',
                 document_id=adjustment.id,
                 action='validation',
                 user=request.user,
                 message='Adjustment posted',
                 before={'status': previous_status},
                 after={'status': adjustment.status},
+                warehouse=adjustment.warehouse,
             )
         
         return Response({
@@ -571,21 +657,40 @@ class StockAdjustmentViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK if success else status.HTTP_400_BAD_REQUEST)
 
 
-class StockLedgerViewSet(viewsets.ReadOnlyModelViewSet):
+class StockLedgerViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ReadOnlyModelViewSet):
     """Stock Ledger - Read-only audit trail"""
+
     queryset = StockLedger.objects.select_related('product', 'warehouse', 'created_by')
     serializer_class = StockLedgerSerializer
     permission_classes = [IsAuthenticated]
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['product', 'warehouse', 'transaction_type', 'document_number']
     search_fields = ['product__name', 'product__sku', 'document_number']
     ordering_fields = ['created_at']
 
 
-class CycleCountTaskViewSet(viewsets.ModelViewSet):
+class CycleCountTaskViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Cycle count task management"""
+
     queryset = CycleCountTask.objects.select_related('warehouse', 'created_by').prefetch_related('items__product')
     permission_classes = [IsAuthenticated]
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'start': 'ops.draft',
+        'update_counts': 'ops.draft',
+        'complete': 'ops.validate',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'warehouse', 'created_by', 'scheduled_date']
     search_fields = ['document_number']
@@ -597,9 +702,7 @@ class CycleCountTaskViewSet(viewsets.ModelViewSet):
         return CycleCountTaskSerializer
 
     def perform_create(self, serializer):
-        # CycleCountTaskCreateSerializer sets created_by from request.user.
-        # Passing it here as well causes: "got multiple values for keyword argument 'created_by'".
-        serializer.save()
+        serializer.save(created_by=self.request.user)
 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
@@ -740,13 +843,14 @@ class CycleCountTaskViewSet(viewsets.ModelViewSet):
             }
             _emit_integration_event('cycle_count_completed', payload)
             log_audit_event(
-                document_type='cyclecounttask',
+                document_type='cycle_count',
                 document_id=task.id,
                 action='validation',
                 user=request.user,
                 message='Cycle count completed',
                 before={'status': 'ready'},
                 after={'status': task.status},
+                warehouse=task.warehouse,
             )
 
         return Response({
@@ -759,10 +863,24 @@ class CycleCountTaskViewSet(viewsets.ModelViewSet):
 
 # New ViewSets for the missing features
 
-class PickWaveViewSet(viewsets.ModelViewSet):
+class PickWaveViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Pick wave management for batch picking"""
+
     queryset = PickWave.objects.select_related('warehouse', 'created_by', 'assigned_picker').prefetch_related('delivery_orders')
     permission_classes = [IsAuthenticated]
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+        'start_picking': 'ops.draft',
+        'complete_picking': 'ops.draft',
+        'generate_wave': 'ops.draft',
+        'pick_list': 'ops.read',
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'warehouse', 'assigned_picker', 'created_by']
     search_fields = ['name']
@@ -774,8 +892,7 @@ class PickWaveViewSet(viewsets.ModelViewSet):
         return PickWaveSerializer
 
     def perform_create(self, serializer):
-        # PickWaveCreateSerializer sets created_by from request.user.
-        serializer.save()
+        serializer.save(created_by=self.request.user)
 
     @action(detail=True, methods=['post'])
     def start_picking(self, request, pk=None):
@@ -821,8 +938,8 @@ class PickWaveViewSet(viewsets.ModelViewSet):
         if date_to:
             query &= Q(created_at__lte=date_to)
 
-        # Get matching delivery orders
-        delivery_orders = DeliveryOrder.objects.filter(query)
+        # Get matching delivery orders (warehouse-scoped)
+        delivery_orders = scope_queryset(DeliveryOrder.objects.filter(query), request.user, warehouse_fields=('warehouse',))
 
         if not delivery_orders.exists():
             return Response(
@@ -889,8 +1006,15 @@ class PickWaveViewSet(viewsets.ModelViewSet):
         return Response({'results': sorted_rows})
 
 
-class ApprovalViewSet(viewsets.ModelViewSet):
-    """Generic approval management"""
+class ApprovalViewSet(CapabilityPermissionsMixin, viewsets.ModelViewSet):
+    """Generic approval management.
+
+    Approvals themselves are not warehouse-bound, so we scope list/retrieve to a
+    concrete document context (document_type + document_id) for non-admin users.
+
+    Note: approvals are always created via document approve endpoints.
+    """
+
     queryset = Approval.objects.select_related('approver')
     serializer_class = ApprovalSerializer
     permission_classes = [IsAuthenticated]
@@ -898,9 +1022,41 @@ class ApprovalViewSet(viewsets.ModelViewSet):
     filterset_fields = ['document_type', 'document_id', 'approver']
     ordering_fields = ['approved_at']
 
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.approve',
+        'update': 'ops.approve',
+        'partial_update': 'ops.approve',
+        'destroy': 'ops.approve',
+    }
 
-class DocumentCommentViewSet(viewsets.ModelViewSet):
-    """Generic document comments management"""
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, 'user', None)
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+
+        doc_type = self.request.query_params.get('document_type')
+        doc_id = self.request.query_params.get('document_id')
+        if not doc_type or not doc_id:
+            return qs.none()
+
+        try:
+            doc_id_int = int(doc_id)
+        except Exception:
+            return qs.none()
+
+        from .access import document_in_scope
+        if not document_in_scope(user, doc_type, doc_id_int):
+            return qs.none()
+
+        return qs.filter(document_type=doc_type, document_id=doc_id_int)
+
+
+class DocumentCommentViewSet(CapabilityPermissionsMixin, viewsets.ModelViewSet):
+    """Generic document comments management."""
+
     queryset = DocumentComment.objects.select_related('author')
     serializer_class = DocumentCommentSerializer
     permission_classes = [IsAuthenticated]
@@ -908,12 +1064,75 @@ class DocumentCommentViewSet(viewsets.ModelViewSet):
     filterset_fields = ['document_type', 'document_id', 'author']
     ordering_fields = ['created_at']
 
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+    }
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, 'user', None)
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+
+        doc_type = self.request.query_params.get('document_type')
+        doc_id = self.request.query_params.get('document_id')
+        if not doc_type or not doc_id:
+            # Require a concrete document context for non-admin queries.
+            return qs.none()
+
+        try:
+            doc_id_int = int(doc_id)
+        except Exception:
+            return qs.none()
+
+        # Ensure the underlying document is in-scope.
+        from .access import document_in_scope
+        if not document_in_scope(user, doc_type, doc_id_int):
+            return qs.none()
+
+        return qs.filter(document_type=doc_type, document_id=doc_id_int)
+
     def perform_create(self, serializer):
-        serializer.save(author=self.request.user)
+        doc_type = self.request.data.get('document_type')
+        doc_id = self.request.data.get('document_id')
+
+        from .access import document_in_scope
+        try:
+            doc_id_int = int(doc_id)
+        except Exception:
+            raise ValidationError({'document_id': 'Invalid document_id'})
+
+        if not document_in_scope(self.request.user, doc_type, doc_id_int):
+            raise ValidationError({'detail': 'You do not have access to this document.'})
+
+        obj = serializer.save(author=self.request.user)
+
+        try:
+            from operations.audit import log_audit_event
+
+            doc = document_in_scope(self.request.user, doc_type, doc_id_int, return_warehouse=True)
+            log_audit_event(
+                document_type=doc_type,
+                document_id=doc_id_int,
+                action='comment',
+                user=self.request.user,
+                message='Comment added',
+                before=None,
+                after={'comment_id': obj.id},
+                warehouse=getattr(doc, 'warehouse', None),
+            )
+        except Exception:
+            pass
 
 
-class DocumentAttachmentViewSet(viewsets.ModelViewSet):
+class DocumentAttachmentViewSet(CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Generic document attachments management"""
+
     queryset = DocumentAttachment.objects.select_related('uploaded_by')
     serializer_class = DocumentAttachmentSerializer
     permission_classes = [IsAuthenticated]
@@ -922,7 +1141,50 @@ class DocumentAttachmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ['uploaded_at']
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.draft',
+        'update': 'ops.draft',
+        'partial_update': 'ops.draft',
+        'destroy': 'ops.draft',
+    }
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, 'user', None)
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+
+        doc_type = self.request.query_params.get('document_type')
+        doc_id = self.request.query_params.get('document_id')
+        if not doc_type or not doc_id:
+            return qs.none()
+
+        try:
+            doc_id_int = int(doc_id)
+        except Exception:
+            return qs.none()
+
+        from .access import document_in_scope
+        if not document_in_scope(user, doc_type, doc_id_int):
+            return qs.none()
+
+        return qs.filter(document_type=doc_type, document_id=doc_id_int)
+
     def perform_create(self, serializer):
+        doc_type = self.request.data.get('document_type')
+        doc_id = self.request.data.get('document_id')
+
+        from .access import document_in_scope
+        try:
+            doc_id_int = int(doc_id)
+        except Exception:
+            raise ValidationError({'document_id': 'Invalid document_id'})
+
+        if not document_in_scope(self.request.user, doc_type, doc_id_int):
+            raise ValidationError({'detail': 'You do not have access to this document.'})
+
         uploaded_file = self.request.FILES.get('file')
         if not uploaded_file:
             raise ValidationError({'file': 'An attachment file is required.'})
@@ -932,7 +1194,7 @@ class DocumentAttachmentViewSet(viewsets.ModelViewSet):
         saved_path = default_storage.save(path, uploaded_file)
         mime_type = uploaded_file.content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
 
-        serializer.save(
+        obj = serializer.save(
             uploaded_by=self.request.user,
             file_name=filename,
             file_path=saved_path,
@@ -940,15 +1202,43 @@ class DocumentAttachmentViewSet(viewsets.ModelViewSet):
             mime_type=mime_type,
         )
 
+        try:
+            from operations.audit import log_audit_event
 
-class SavedViewViewSet(viewsets.ModelViewSet):
+            doc = document_in_scope(self.request.user, doc_type, doc_id_int, return_warehouse=True)
+            log_audit_event(
+                document_type=doc_type,
+                document_id=doc_id_int,
+                action='update',
+                user=self.request.user,
+                message='Attachment uploaded',
+                before=None,
+                after={'attachment_id': obj.id, 'file_name': filename},
+                warehouse=getattr(doc, 'warehouse', None),
+            )
+        except Exception:
+            pass
+
+
+class SavedViewViewSet(CapabilityPermissionsMixin, viewsets.ModelViewSet):
     """Saved views/filters management"""
+
     queryset = SavedView.objects.select_related('user')
     serializer_class = SavedViewSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['user', 'page_key']
     ordering_fields = ['created_at', 'page_key']
+
+    permission_action_map = {
+        'list': 'ops.read',
+        'retrieve': 'ops.read',
+        'create': 'ops.read',
+        'update': 'ops.read',
+        'partial_update': 'ops.read',
+        'destroy': 'ops.read',
+        'by_page': 'ops.read',
+    }
 
     def get_queryset(self):
         # Users can only see their own saved views
@@ -969,13 +1259,53 @@ class SavedViewViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+class AuditLogViewSet(WarehouseScopedQuerySetMixin, CapabilityPermissionsMixin, viewsets.ReadOnlyModelViewSet):
     """Read-only audit log access."""
 
-    queryset = AuditLog.objects.select_related('user')
+    queryset = AuditLog.objects.select_related('user', 'warehouse')
     serializer_class = AuditLogSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['document_type', 'document_id', 'action', 'user']
+    filterset_fields = ['document_type', 'document_id', 'action', 'user', 'warehouse']
     search_fields = ['message']
     ordering_fields = ['created_at']
+
+    permission_action_map = {
+        'list': 'audit.read',
+        'retrieve': 'audit.read',
+        'export_csv': 'audit.read',
+    }
+
+    @action(detail=False, methods=['get'])
+    def export_csv(self, request):
+        """Export filtered audit logs as CSV (warehouse-scoped)."""
+        qs = self.filter_queryset(self.get_queryset()).order_by('-created_at')
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="audit_logs.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'created_at',
+            'warehouse_id',
+            'warehouse',
+            'document_type',
+            'document_id',
+            'action',
+            'user_email',
+            'message',
+        ])
+
+        for row in qs:
+            writer.writerow([
+                row.created_at.isoformat() if row.created_at else '',
+                row.warehouse_id or '',
+                getattr(row.warehouse, 'name', '') if row.warehouse else '',
+                row.document_type,
+                row.document_id,
+                row.action,
+                getattr(row.user, 'email', '') if row.user else '',
+                row.message or '',
+            ])
+
+        return response

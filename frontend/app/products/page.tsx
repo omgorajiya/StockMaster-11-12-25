@@ -1,20 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { productService, Product, Category } from '@/lib/products';
 import { Plus, Search, Edit, Eye, Filter } from 'lucide-react';
 import Link from 'next/link';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import SavedViewToolbar from '@/components/SavedViewToolbar';
 
-export default function ProductsPage() {
+function ProductsPageContent() {
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [stockFilter, setStockFilter] = useState<string>('');
   const [categories, setCategories] = useState<Category[]>([]);
   const debouncedSearch = useDebounce(search, 500);
+
+  // Read filter from URL on mount
+  useEffect(() => {
+    const filter = searchParams.get('filter');
+    if (filter) {
+      setStockFilter(filter);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     loadCategories();
@@ -23,7 +33,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     loadProducts();
-  }, [debouncedSearch, categoryFilter]);
+  }, [debouncedSearch, categoryFilter, stockFilter]);
 
   const loadCategories = async () => {
     try {
@@ -37,11 +47,42 @@ export default function ProductsPage() {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const params: any = {};
-      if (debouncedSearch) params.search = debouncedSearch;
-      if (categoryFilter) params.category = parseInt(categoryFilter);
-      const data = await productService.getProducts(params);
-      setProducts(data.results || data);
+      
+      // Handle stock filters (low_stock, out_of_stock)
+      if (stockFilter === 'low_stock') {
+        const data = await productService.getLowStockProducts();
+        let filtered = Array.isArray(data) ? data : (data.results || []);
+        
+        // Apply search and category filters if set
+        if (debouncedSearch) {
+          filtered = filtered.filter((p: Product) =>
+            p.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            p.sku.toLowerCase().includes(debouncedSearch.toLowerCase())
+          );
+        }
+        if (categoryFilter) {
+          filtered = filtered.filter((p: Product) =>
+            p.category && Number(p.category) === parseInt(categoryFilter)
+          );
+        }
+        setProducts(filtered);
+      } else if (stockFilter === 'out_of_stock') {
+        // Get all products and filter for out of stock
+        const params: any = {};
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (categoryFilter) params.category = parseInt(categoryFilter);
+        const data = await productService.getProducts(params);
+        const allProducts = data.results || data;
+        const outOfStock = allProducts.filter((p: Product) => (p.total_stock || 0) === 0);
+        setProducts(outOfStock);
+      } else {
+        // Normal product listing
+        const params: any = {};
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (categoryFilter) params.category = parseInt(categoryFilter);
+        const data = await productService.getProducts(params);
+        setProducts(data.results || data);
+      }
     } catch (error) {
       console.error('Failed to load products:', error);
     } finally {
@@ -54,11 +95,25 @@ export default function ProductsPage() {
     setCategoryFilter(filters.category ? String(filters.category) : '');
   };
 
+  // Show filter badge if filter is active
+  const getFilterBadge = () => {
+    if (stockFilter === 'low_stock') {
+      return <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full font-medium">Low Stock</span>;
+    }
+    if (stockFilter === 'out_of_stock') {
+      return <span className="ml-2 px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full font-medium">Out of Stock</span>;
+    }
+    return null;
+  };
+
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Products</h1>
+          <div className="flex items-center flex-wrap gap-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Products</h1>
+            {getFilterBadge()}
+          </div>
           <Link
             href="/products/new"
             className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm sm:text-base w-full sm:w-auto justify-center"
@@ -266,7 +321,20 @@ export default function ProductsPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={
+      <>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      </>
+    }>
+      <ProductsPageContent />
+    </Suspense>
+  );
+}

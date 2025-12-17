@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
 import { supplierService } from '@/lib/suppliers';
 import { Save, X } from 'lucide-react';
 import Link from 'next/link';
@@ -43,7 +42,7 @@ export default function NewSupplierPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">New Supplier</h1>
@@ -206,7 +205,7 @@ export default function NewSupplierPage() {
           </div>
         </form>
       </div>
-    </Layout>
+    </>
   );
 }
 

@@ -144,3 +144,14 @@ AUTH_USER_MODEL = 'accounts.User'
 # OTP Settings
 OTP_EXPIRY_MINUTES = 10
 
+# Onboarding / access control
+# In real deployments, keep this True and onboard users via admin-created invites.
+INVITE_ONLY_REGISTRATION = config('INVITE_ONLY_REGISTRATION', default=False, cast=bool)
+
+# Warehouse scoping rollout:
+# - False (default): legacy behaviour for existing installs. If a non-admin user has
+#   no allowed_warehouses assigned, warehouse filtering is not enforced.
+# - True: strict isolation. Non-admin users must have allowed_warehouses set or
+#   they will see no warehouse-scoped data.
+RBAC_REQUIRE_WAREHOUSE_MEMBERSHIP = config('RBAC_REQUIRE_WAREHOUSE_MEMBERSHIP', default=False, cast=bool)
+

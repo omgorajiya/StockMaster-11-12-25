@@ -27,7 +27,7 @@ export interface Product {
   name: string;
   sku: string;
   code?: string;
-  category?: number;
+  category?: number | null;
   category_name?: string;
   stock_unit: number;
   stock_unit_detail?: UnitOfMeasure;
@@ -70,6 +70,11 @@ export interface BinLocation {
 export const productService = {
   async getCategories(): Promise<Category[]> {
     const response = await api.get('/products/categories/');
+    return response.data.results || response.data;
+  },
+
+  async getStockItems(params?: { warehouse?: number; product?: number }): Promise<StockItem[]> {
+    const response = await api.get('/products/stock-items/', { params });
     return response.data.results || response.data;
   },
 

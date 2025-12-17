@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Layout from '@/components/Layout';
 import { productService, Warehouse } from '@/lib/products';
 import { notificationService, NotificationJobStatus } from '@/lib/notifications';
 import { Plus, Edit, Trash2, RefreshCw, CheckCircle } from 'lucide-react';
@@ -72,7 +71,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <Layout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
@@ -281,7 +280,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }
 

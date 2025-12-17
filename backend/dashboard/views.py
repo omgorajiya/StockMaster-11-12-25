@@ -27,22 +27,34 @@ from operations.models import (
     StockAdjustment,
     ReceiptItem,
     DeliveryItem,
+    TransferItem,
 )
+from accounts.scoping import allowed_warehouse_ids, require_warehouse_membership, scope_queryset
+
+
+def _scoped_stock_items(request):
+    user = getattr(request, 'user', None)
+    if getattr(user, 'role', None) == 'admin':
+        return StockItem.objects.all()
+
+    ids = allowed_warehouse_ids(user) or []
+    if not ids:
+        return StockItem.objects.none() if require_warehouse_membership() else StockItem.objects.all()
+    return StockItem.objects.filter(warehouse_id__in=ids)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_kpis(request):
     """Get dashboard KPIs"""
-    from products.models import StockItem
-    from django.db.models import Sum, Q
+    from django.db.models import Sum
     
     # Total Products in Stock
     total_products = Product.objects.filter(is_active=True).count()
     
     # Optimize: Use aggregation instead of iterating
     # Get all stock items grouped by product
-    stock_by_product = StockItem.objects.values('product').annotate(
+    stock_by_product = _scoped_stock_items(request).values('product').annotate(
         total_quantity=Sum('quantity')
     )
     
@@ -62,18 +74,24 @@ def dashboard_kpis(request):
             low_stock_count += 1
     
     # Pending Receipts
-    pending_receipts = Receipt.objects.filter(
-        status__in=['draft', 'waiting', 'ready']
+    pending_receipts = scope_queryset(
+        Receipt.objects.filter(status__in=['draft', 'waiting', 'ready']),
+        request.user,
+        warehouse_fields=('warehouse',),
     ).count()
     
     # Pending Deliveries
-    pending_deliveries = DeliveryOrder.objects.filter(
-        status__in=['draft', 'waiting', 'ready']
+    pending_deliveries = scope_queryset(
+        DeliveryOrder.objects.filter(status__in=['draft', 'waiting', 'ready']),
+        request.user,
+        warehouse_fields=('warehouse',),
     ).count()
     
     # Internal Transfers Scheduled
-    scheduled_transfers = InternalTransfer.objects.filter(
-        status__in=['draft', 'waiting', 'ready']
+    scheduled_transfers = scope_queryset(
+        InternalTransfer.objects.filter(status__in=['draft', 'waiting', 'ready']),
+        request.user,
+        warehouse_fields=('warehouse', 'to_warehouse'),
     ).count()
     
     return Response({
@@ -94,7 +112,11 @@ def recent_activities(request):
     
     # Optimize: Use select_related to avoid N+1 queries
     # Get recent receipts
-    recent_receipts = Receipt.objects.select_related('warehouse').order_by('-created_at')[:limit]
+    recent_receipts = scope_queryset(
+        Receipt.objects.select_related('warehouse').order_by('-created_at'),
+        request.user,
+        warehouse_fields=('warehouse',),
+    )[:limit]
     receipts_data = [{
         'type': 'receipt',
         'document_number': r.document_number,
@@ -104,7 +126,11 @@ def recent_activities(request):
     } for r in recent_receipts]
     
     # Get recent deliveries
-    recent_deliveries = DeliveryOrder.objects.select_related('warehouse').order_by('-created_at')[:limit]
+    recent_deliveries = scope_queryset(
+        DeliveryOrder.objects.select_related('warehouse').order_by('-created_at'),
+        request.user,
+        warehouse_fields=('warehouse',),
+    )[:limit]
     deliveries_data = [{
         'type': 'delivery',
         'document_number': d.document_number,
@@ -114,7 +140,11 @@ def recent_activities(request):
     } for d in recent_deliveries]
     
     # Get recent transfers
-    recent_transfers = InternalTransfer.objects.select_related('warehouse', 'to_warehouse').order_by('-created_at')[:limit]
+    recent_transfers = scope_queryset(
+        InternalTransfer.objects.select_related('warehouse', 'to_warehouse').order_by('-created_at'),
+        request.user,
+        warehouse_fields=('warehouse', 'to_warehouse'),
+    )[:limit]
     transfers_data = [{
         'type': 'transfer',
         'document_number': t.document_number,
@@ -139,7 +169,7 @@ def low_stock_products(request):
     from django.db.models import Sum
     
     # Optimize: Use aggregation
-    stock_by_product = StockItem.objects.values('product').annotate(
+    stock_by_product = _scoped_stock_items(request).values('product').annotate(
         total_quantity=Sum('quantity')
     )
     stock_dict = {item['product']: item['total_quantity'] for item in stock_by_product}
@@ -163,10 +193,10 @@ def low_stock_products(request):
     return Response(low_stock_products)
 
 
-def _compute_abc_dataset():
+def _compute_abc_dataset(request):
     """Calculate ABC dataset reused across endpoints."""
     products = Product.objects.filter(is_active=True).select_related('category')
-    stock_by_product = StockItem.objects.values('product').annotate(
+    stock_by_product = _scoped_stock_items(request).values('product').annotate(
         total_quantity=Sum('quantity')
     )
     stock_dict = {item['product']: item['total_quantity'] for item in stock_by_product}
@@ -174,9 +204,14 @@ def _compute_abc_dataset():
     product_data = []
     for product in products:
         total_stock = stock_dict.get(product.id, 0)
-        avg_price = ReceiptItem.objects.filter(
-            product=product
-        ).aggregate(avg=Avg('unit_price'))['avg'] or Decimal('0.00')
+        avg_price = (
+            scope_queryset(
+                ReceiptItem.objects.filter(product=product),
+                request.user,
+                warehouse_fields=('receipt__warehouse',),
+            ).aggregate(avg=Avg('unit_price'))['avg']
+            or Decimal('0.00')
+        )
 
         total_value = Decimal(total_stock) * Decimal(avg_price)
         product_data.append({
@@ -219,7 +254,7 @@ def _compute_abc_dataset():
 @permission_classes([IsAuthenticated])
 def abc_analysis(request):
     """ABC Analysis - Pareto Principle (80/20 rule)"""
-    product_data, summary = _compute_abc_dataset()
+    product_data, summary = _compute_abc_dataset(request)
     return Response({'products': product_data, 'summary': summary})
 
 
@@ -240,17 +275,24 @@ def inventory_turnover(request):
     end_date = timezone.now()
     start_date = end_date - timedelta(days=months * 30)
 
-    # Calculate COGS (Cost of Goods Sold) from deliveries
-    cogs = DeliveryItem.objects.filter(
-        delivery__status='done',
-        delivery__completed_at__gte=start_date,
-        delivery__completed_at__lte=end_date
-    ).aggregate(
-        total_quantity=Sum('quantity')
-    )['total_quantity'] or 0
+    # Calculate COGS (Cost of Goods Sold) from deliveries (warehouse-scoped)
+    cogs_qs = scope_queryset(
+        DeliveryItem.objects.filter(
+            delivery__status='done',
+            delivery__completed_at__gte=start_date,
+            delivery__completed_at__lte=end_date,
+        ),
+        request.user,
+        warehouse_fields=('delivery__warehouse',),
+    )
+    cogs = cogs_qs.aggregate(total_quantity=Sum('quantity'))['total_quantity'] or 0
 
-    # Precompute average unit price per product from receipts in a single query
-    price_by_product = ReceiptItem.objects.values('product').annotate(
+    # Precompute average unit price per product from receipts in a single query (warehouse-scoped)
+    price_by_product = scope_queryset(
+        ReceiptItem.objects.all(),
+        request.user,
+        warehouse_fields=('receipt__warehouse',),
+    ).values('product').annotate(
         avg_price=Avg('unit_price')
     )
     price_dict = {
@@ -259,7 +301,7 @@ def inventory_turnover(request):
     }
 
     # Precompute total stock quantity per product
-    stock_by_product = StockItem.objects.values('product').annotate(
+    stock_by_product = _scoped_stock_items(request).values('product').annotate(
         total_quantity=Sum('quantity')
     )
 
@@ -295,7 +337,7 @@ def analytics_dashboard(request):
     
     # ABC Analysis summary
     products = Product.objects.filter(is_active=True)
-    stock_by_product = StockItem.objects.values('product').annotate(
+    stock_by_product = _scoped_stock_items(request).values('product').annotate(
         total_quantity=Sum('quantity')
     )
     stock_dict = {item['product']: item['total_quantity'] for item in stock_by_product}
@@ -304,9 +346,14 @@ def analytics_dashboard(request):
     product_values = []
     for product in products:
         total_stock = stock_dict.get(product.id, 0)
-        avg_price = ReceiptItem.objects.filter(
-            product=product
-        ).aggregate(avg=Avg('unit_price'))['avg'] or Decimal('0.00')
+        avg_price = (
+            scope_queryset(
+                ReceiptItem.objects.filter(product=product),
+                request.user,
+                warehouse_fields=('receipt__warehouse',),
+            ).aggregate(avg=Avg('unit_price'))['avg']
+            or Decimal('0.00')
+        )
         total_value = Decimal(total_stock) * Decimal(avg_price)
         product_values.append(total_value)
     
@@ -323,10 +370,14 @@ def analytics_dashboard(request):
     end_date = timezone.now()
     start_date = end_date - timedelta(days=months * 30)
     
-    cogs = DeliveryItem.objects.filter(
-        delivery__status='done',
-        delivery__completed_at__gte=start_date,
-        delivery__completed_at__lte=end_date
+    cogs = scope_queryset(
+        DeliveryItem.objects.filter(
+            delivery__status='done',
+            delivery__completed_at__gte=start_date,
+            delivery__completed_at__lte=end_date,
+        ),
+        request.user,
+        warehouse_fields=('delivery__warehouse',),
     ).aggregate(total=Sum('quantity'))['total'] or 0
     
     avg_inventory = sum(stock_dict.values()) if stock_dict else 1
@@ -343,8 +394,14 @@ def analytics_dashboard(request):
     dead_stock_products = [p for p in products if p.id not in active_products]
     dead_stock_value = sum([
         float(stock_dict.get(p.id, 0)) * float(
-            ReceiptItem.objects.filter(product=p).aggregate(avg=Avg('unit_price'))['avg'] or 0
-        ) for p in dead_stock_products
+            scope_queryset(
+                ReceiptItem.objects.filter(product=p),
+                request.user,
+                warehouse_fields=('receipt__warehouse',),
+            ).aggregate(avg=Avg('unit_price'))['avg']
+            or 0
+        )
+        for p in dead_stock_products
     ])
     
     return Response({
@@ -388,9 +445,13 @@ def replenishment_suggestions(request):
     start_date = now - timedelta(days=days)
 
     demand_rows = (
-        DeliveryItem.objects.filter(
-            delivery__status='done',
-            delivery__completed_at__gte=start_date,
+        scope_queryset(
+            DeliveryItem.objects.filter(
+                delivery__status='done',
+                delivery__completed_at__gte=start_date,
+            ),
+            request.user,
+            warehouse_fields=('delivery__warehouse',),
         )
         .values('product_id', 'delivery__warehouse_id')
         .annotate(
@@ -411,7 +472,7 @@ def replenishment_suggestions(request):
     }
     stock_items = {
         (item.product_id, item.warehouse_id): item.quantity
-        for item in StockItem.objects.filter(
+        for item in _scoped_stock_items(request).filter(
             product_id__in=product_ids,
             warehouse_id__in=warehouse_ids,
         )
@@ -465,8 +526,11 @@ def service_level_metrics(request):
     lookback_days = int(request.query_params.get('days', 30))
     start_date = timezone.now() - timedelta(days=lookback_days)
 
-    deliveries = DeliveryOrder.objects.filter(created_at__gte=start_date)
-    deliveries = deliveries.select_related('warehouse')
+    deliveries = scope_queryset(
+        DeliveryOrder.objects.filter(created_at__gte=start_date).select_related('warehouse'),
+        request.user,
+        warehouse_fields=('warehouse',),
+    )
 
     total_deliveries = deliveries.count()
     done_deliveries = deliveries.filter(status='done', completed_at__isnull=False)
@@ -480,8 +544,16 @@ def service_level_metrics(request):
         )
     ).aggregate(avg=Avg('lead_time'))['avg']
 
-    shipped_qty = DeliveryItem.objects.filter(delivery__status='done').aggregate(total=Sum('quantity'))['total'] or 0
-    open_qty = DeliveryItem.objects.exclude(delivery__status='done').aggregate(total=Sum('quantity'))['total'] or 0
+    shipped_qty = scope_queryset(
+        DeliveryItem.objects.filter(delivery__status='done'),
+        request.user,
+        warehouse_fields=('delivery__warehouse',),
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+    open_qty = scope_queryset(
+        DeliveryItem.objects.exclude(delivery__status='done'),
+        request.user,
+        warehouse_fields=('delivery__warehouse',),
+    ).aggregate(total=Sum('quantity'))['total'] or 0
     total_requested = shipped_qty + open_qty
 
     per_warehouse = []
@@ -541,20 +613,279 @@ def service_level_metrics(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def inventory_movement_value_trend(request):
+    """Get inventory movement value trend over time (receipts, deliveries, transfers) with status breakdown"""
+    days = int(request.query_params.get('days', 30))
+    warehouse_id = request.query_params.get('warehouse_id')
+    include_status = request.query_params.get('include_status', 'false').lower() == 'true'
+    
+    end_date = timezone.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # Base queryset filters
+    receipt_filter = Q(receipt__created_at__gte=start_date, receipt__created_at__lte=end_date)
+    delivery_filter = Q(delivery__created_at__gte=start_date, delivery__created_at__lte=end_date)
+    transfer_filter = Q(transfer__created_at__gte=start_date, transfer__created_at__lte=end_date)
+    
+    if warehouse_id:
+        receipt_filter &= Q(receipt__warehouse_id=warehouse_id)
+        delivery_filter &= Q(delivery__warehouse_id=warehouse_id)
+        transfer_filter &= Q(transfer__warehouse_id=warehouse_id)
+    
+    # Get average prices per product (for deliveries and transfers that don't have unit_price)
+    price_by_product = scope_queryset(
+        ReceiptItem.objects.all(),
+        request.user,
+        warehouse_fields=('receipt__warehouse',),
+    ).values('product').annotate(
+        avg_price=Avg('unit_price')
+    )
+    price_dict = {
+        item['product']: Decimal(item['avg_price'] or 0)
+        for item in price_by_product
+    }
+    
+    # Receipts value (has unit_price)
+    receipt_items = scope_queryset(
+        ReceiptItem.objects.filter(receipt_filter).select_related('receipt', 'product'),
+        request.user,
+        warehouse_fields=('receipt__warehouse',),
+    )
+    receipt_data = {}
+    receipt_status_data = {} if include_status else None
+    
+    for item in receipt_items:
+        date_key = item.receipt.created_at.date().isoformat()
+        status = item.receipt.status
+        
+        # Total receipts value
+        if date_key not in receipt_data:
+            receipt_data[date_key] = Decimal('0.00')
+        unit_price = item.unit_price or price_dict.get(item.product_id, Decimal('0.00'))
+        value = item.stock_quantity() * unit_price
+        receipt_data[date_key] += value
+        
+        # Status breakdown
+        if include_status:
+            if date_key not in receipt_status_data:
+                receipt_status_data[date_key] = {
+                    'draft': Decimal('0.00'),
+                    'waiting': Decimal('0.00'),
+                    'ready': Decimal('0.00'),
+                    'done': Decimal('0.00'),
+                    'canceled': Decimal('0.00'),
+                }
+            receipt_status_data[date_key][status] += value
+    
+    # Deliveries value (no unit_price, use average from receipts)
+    delivery_items = scope_queryset(
+        DeliveryItem.objects.filter(delivery_filter).select_related('delivery', 'product'),
+        request.user,
+        warehouse_fields=('delivery__warehouse',),
+    )
+    delivery_data = {}
+    delivery_status_data = {} if include_status else None
+    
+    for item in delivery_items:
+        date_key = item.delivery.created_at.date().isoformat()
+        status = item.delivery.status
+        
+        # Total deliveries value
+        if date_key not in delivery_data:
+            delivery_data[date_key] = Decimal('0.00')
+        unit_price = price_dict.get(item.product_id, Decimal('0.00'))
+        value = item.stock_quantity() * unit_price
+        delivery_data[date_key] += value
+        
+        # Status breakdown
+        if include_status:
+            if date_key not in delivery_status_data:
+                delivery_status_data[date_key] = {
+                    'draft': Decimal('0.00'),
+                    'waiting': Decimal('0.00'),
+                    'ready': Decimal('0.00'),
+                    'done': Decimal('0.00'),
+                    'canceled': Decimal('0.00'),
+                }
+            delivery_status_data[date_key][status] += value
+    
+    # Transfers value (no unit_price, use average from receipts)
+    transfer_items = scope_queryset(
+        TransferItem.objects.filter(transfer_filter).select_related('transfer', 'product'),
+        request.user,
+        warehouse_fields=('transfer__warehouse', 'transfer__to_warehouse'),
+    )
+    transfer_data = {}
+    transfer_status_data = {} if include_status else None
+    
+    for item in transfer_items:
+        date_key = item.transfer.created_at.date().isoformat()
+        status = item.transfer.status
+        
+        # Total transfers value
+        if date_key not in transfer_data:
+            transfer_data[date_key] = Decimal('0.00')
+        unit_price = price_dict.get(item.product_id, Decimal('0.00'))
+        value = item.stock_quantity() * unit_price
+        transfer_data[date_key] += value
+        
+        # Status breakdown
+        if include_status:
+            if date_key not in transfer_status_data:
+                transfer_status_data[date_key] = {
+                    'draft': Decimal('0.00'),
+                    'waiting': Decimal('0.00'),
+                    'ready': Decimal('0.00'),
+                    'done': Decimal('0.00'),
+                    'canceled': Decimal('0.00'),
+                }
+            transfer_status_data[date_key][status] += value
+    
+    # Combine all dates and create response
+    all_dates = set(list(receipt_data.keys()) + list(delivery_data.keys()) + list(transfer_data.keys()))
+    all_dates = sorted(all_dates)
+    
+    trend_data = []
+    for date_str in all_dates:
+        data_point = {
+            'date': date_str,
+            'receipts_value': float(receipt_data.get(date_str, Decimal('0.00'))),
+            'deliveries_value': float(delivery_data.get(date_str, Decimal('0.00'))),
+            'transfers_value': float(transfer_data.get(date_str, Decimal('0.00'))),
+        }
+        
+        # Add status breakdown if requested
+        if include_status:
+            receipt_status = receipt_status_data.get(date_str, {})
+            delivery_status = delivery_status_data.get(date_str, {})
+            transfer_status = transfer_status_data.get(date_str, {})
+            
+            data_point['receipts_status'] = {
+                'draft': float(receipt_status.get('draft', Decimal('0.00'))),
+                'waiting': float(receipt_status.get('waiting', Decimal('0.00'))),
+                'ready': float(receipt_status.get('ready', Decimal('0.00'))),
+                'done': float(receipt_status.get('done', Decimal('0.00'))),
+                'canceled': float(receipt_status.get('canceled', Decimal('0.00'))),
+            }
+            data_point['deliveries_status'] = {
+                'draft': float(delivery_status.get('draft', Decimal('0.00'))),
+                'waiting': float(delivery_status.get('waiting', Decimal('0.00'))),
+                'ready': float(delivery_status.get('ready', Decimal('0.00'))),
+                'done': float(delivery_status.get('done', Decimal('0.00'))),
+                'canceled': float(delivery_status.get('canceled', Decimal('0.00'))),
+            }
+            data_point['transfers_status'] = {
+                'draft': float(transfer_status.get('draft', Decimal('0.00'))),
+                'waiting': float(transfer_status.get('waiting', Decimal('0.00'))),
+                'ready': float(transfer_status.get('ready', Decimal('0.00'))),
+                'done': float(transfer_status.get('done', Decimal('0.00'))),
+                'canceled': float(transfer_status.get('canceled', Decimal('0.00'))),
+            }
+        
+        trend_data.append(data_point)
+    
+    response_data = {
+        'trend': trend_data,
+        'period_days': days,
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+    }
+    
+    if include_status:
+        response_data['has_status_breakdown'] = True
+    
+    return Response(response_data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def inventory_value_by_health(request):
+    """Get inventory value distribution by stock health status"""
+    warehouse_id = request.query_params.get('warehouse_id')
+    
+    # Get all products with stock
+    products = Product.objects.filter(is_active=True).select_related('category')
+    
+    # Get stock by product
+    stock_filter = {}
+    if warehouse_id:
+        stock_filter['warehouse_id'] = warehouse_id
+    
+    stock_by_product = _scoped_stock_items(request).filter(**stock_filter).values('product').annotate(
+        total_quantity=Sum('quantity')
+    )
+    stock_dict = {item['product']: item['total_quantity'] for item in stock_by_product}
+    
+    # Get average prices per product
+    price_by_product = ReceiptItem.objects.values('product').annotate(
+        avg_price=Avg('unit_price')
+    )
+    price_dict = {
+        item['product']: Decimal(item['avg_price'] or 0)
+        for item in price_by_product
+    }
+    
+    # Categorize by health status
+    healthy_value = Decimal('0.00')
+    low_stock_value = Decimal('0.00')
+    out_of_stock_value = Decimal('0.00')
+    
+    healthy_count = 0
+    low_stock_count = 0
+    out_of_stock_count = 0
+    
+    for product in products:
+        total_stock = stock_dict.get(product.id, 0)
+        unit_price = price_dict.get(product.id, Decimal('0.00'))
+        total_value = Decimal(total_stock) * unit_price
+        
+        if total_stock == 0:
+            out_of_stock_value += total_value
+            out_of_stock_count += 1
+        elif total_stock <= product.reorder_level:
+            low_stock_value += total_value
+            low_stock_count += 1
+        else:
+            healthy_value += total_value
+            healthy_count += 1
+    
+    return Response({
+        'healthy': {
+            'value': float(healthy_value),
+            'count': healthy_count,
+        },
+        'low_stock': {
+            'value': float(low_stock_value),
+            'count': low_stock_count,
+        },
+        'out_of_stock': {
+            'value': float(out_of_stock_value),
+            'count': out_of_stock_count,
+        },
+        'total_value': float(healthy_value + low_stock_value + out_of_stock_value),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def abc_xyz_analysis(request):
     """Combined ABC (value) + XYZ (demand variability) classification."""
     months = int(request.query_params.get('months', 6))
     start_date = timezone.now() - timedelta(days=months * 30)
 
     # ABC portion reuses inventory value weighting
-    abc_products, _ = _compute_abc_dataset()
+    abc_products, _ = _compute_abc_dataset(request)
     abc_lookup = {product['product_id']: product for product in abc_products}
     abc_by_product = {pid: data['classification'] for pid, data in abc_lookup.items()}
 
     demand_rows = (
-        DeliveryItem.objects.filter(
-            delivery__status='done',
-            delivery__completed_at__gte=start_date,
+        scope_queryset(
+            DeliveryItem.objects.filter(
+                delivery__status='done',
+                delivery__completed_at__gte=start_date,
+            ),
+            request.user,
+            warehouse_fields=('delivery__warehouse',),
         )
         .annotate(month=TruncMonth('delivery__completed_at'))
         .values('product_id', 'month')

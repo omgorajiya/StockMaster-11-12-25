@@ -24,7 +24,8 @@ export const authService = {
     password: string;
     password_confirm: string;
     phone?: string;
-    role?: string;
+    invite_token?: string;
+    // role is intentionally not supported client-side anymore; server controls role assignment.
   }): Promise<AuthResponse> {
     const response = await api.post('/auth/register/', data);
     const { user, tokens } = response.data;
