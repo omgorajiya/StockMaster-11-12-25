@@ -54,12 +54,15 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
 class WarehouseViewSet(viewsets.ModelViewSet):
     """Warehouse CRUD operations"""
-    queryset = Warehouse.objects.filter(is_active=True)
+
+    # Ensure stable ordering for pagination.
+    queryset = Warehouse.objects.filter(is_active=True).order_by('name')
     serializer_class = WarehouseSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code']
     ordering_fields = ['name', 'created_at']
+    ordering = ['name']
 
     def get_queryset(self):
         qs = super().get_queryset()

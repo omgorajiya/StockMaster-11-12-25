@@ -13,5 +13,6 @@ urlpatterns = [
     path('analytics/abc-xyz/', views.abc_xyz_analysis, name='abc-xyz'),
     path('movement-value-trend/', views.inventory_movement_value_trend, name='movement-value-trend'),
     path('value-by-health/', views.inventory_value_by_health, name='value-by-health'),
+    path('anomalies/', views.anomaly_feed, name='anomaly-feed'),
 ]
 

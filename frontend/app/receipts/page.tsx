@@ -2,9 +2,10 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { operationsService, Receipt } from '@/lib/operations';
+import { operationsService } from '@/lib/operations';
+import type { Receipt as ReceiptType } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, Search, CheckCircle, MessageSquare, Pencil } from 'lucide-react';
+import { Plus, Search, CheckCircle, MessageSquare, Pencil, Receipt } from 'lucide-react';
 import StatusEditModal from '@/components/StatusEditModal';
 import Link from 'next/link';
 import SavedViewToolbar from '@/components/SavedViewToolbar';
@@ -12,7 +13,7 @@ import DocumentCollaborationPanel from '@/components/DocumentCollaborationPanel'
 
 function ReceiptsPageContent() {
   const searchParams = useSearchParams();
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [receipts, setReceipts] = useState<ReceiptType[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -56,11 +57,32 @@ function ReceiptsPageContent() {
 
   const loadReceipts = async () => {
     try {
+      setLoading(true);
       const params: any = {};
-      if (statusFilter) params.status = statusFilter;
+
+      // Support multiple statuses via comma-separated values (e.g. "ready,waiting")
+      if (statusFilter) {
+        const statuses = statusFilter.split(',').map((s) => s.trim());
+        if (statuses.length === 1) {
+          params.status = statuses[0];
+        } else {
+          // Backend only supports a single status param; use the first and filter others on the frontend
+          params.status = statuses[0];
+        }
+      }
+
       if (warehouseFilter) params.warehouse = parseInt(warehouseFilter);
+
       const data = await operationsService.getReceipts(params);
-      setReceipts(data.results || data);
+      let receiptsData = data.results || data;
+
+      // If multiple statuses were provided, narrow results on the frontend
+      if (statusFilter && statusFilter.includes(',')) {
+        const statuses = statusFilter.split(',').map((s) => s.trim());
+        receiptsData = receiptsData.filter((r: ReceiptType) => statuses.includes(r.status));
+      }
+
+      setReceipts(receiptsData);
     } catch (error) {
       console.error('Failed to load receipts:', error);
     } finally {

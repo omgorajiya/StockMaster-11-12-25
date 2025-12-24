@@ -15,6 +15,7 @@ from django.db.models import (
     ExpressionWrapper,
     DurationField,
 )
+from django.db.models.functions import Abs
 from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
 from datetime import timedelta
@@ -25,6 +26,9 @@ from operations.models import (
     DeliveryOrder,
     InternalTransfer,
     StockAdjustment,
+    ReturnOrder,
+    CycleCountTask,
+    CycleCountItem,
     ReceiptItem,
     DeliveryItem,
     TransferItem,
@@ -864,6 +868,390 @@ def inventory_value_by_health(request):
         },
         'total_value': float(healthy_value + low_stock_value + out_of_stock_value),
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def anomaly_feed(request):
+    """Dynamic anomaly feed for the dashboard.
+
+    This endpoint is intentionally lightweight and explainable (rule-based).
+    It is designed to be a "professional" bridge between static demo UI and a
+    future ML/anomaly-detection pipeline.
+
+    Warehouse scoping:
+    - For warehouse-scoped signals, results are limited to request.user's
+      allowed_warehouses (unless admin).
+    - If warehouse_id is provided, results are further filtered to that
+      warehouse (and ignored if out-of-scope).
+
+    Response shape (backwards compatible):
+    - id, title, hint, severity
+    - plus: kind, created_at
+    - plus: actions (optional list of {label, href} deep-links)
+    """
+
+    from decimal import Decimal
+    from notifications.models import Notification
+
+    user = getattr(request, 'user', None)
+    warehouse_id = request.query_params.get('warehouse_id')
+
+    # Optional output cap for UI.
+    try:
+        limit = int(request.query_params.get('limit', 10))
+    except Exception:
+        limit = 10
+    limit = max(1, min(limit, 50))
+
+    # Enforce warehouse filter validity for non-admin users.
+    warehouse_filter_id = None
+    if warehouse_id:
+        try:
+            warehouse_filter_id = int(warehouse_id)
+        except Exception:
+            warehouse_filter_id = None
+
+    if warehouse_filter_id is not None and getattr(user, 'role', None) != 'admin':
+        ids = allowed_warehouse_ids(user) or []
+        if ids:
+            if warehouse_filter_id not in ids:
+                return Response([])
+        else:
+            # If strict membership is enabled, user must have membership.
+            if require_warehouse_membership():
+                return Response([])
+
+    anomalies: list[dict] = []
+    now = timezone.now()
+    now_iso = now.isoformat()
+
+    def _severity_from_count(count: int) -> str:
+        if count >= 10:
+            return 'High'
+        if count >= 3:
+            return 'Medium'
+        return 'Low'
+
+    # 1) Pending approvals backlog (actionable, ops-focused)
+    backlog_counts = {}
+    backlog_total = 0
+
+    def _pending_approval_count(model, *, warehouse_fields):
+        qs = model.objects.filter(requires_approval=True, approved_by__isnull=True).exclude(status='done').exclude(status='canceled')
+        qs = scope_queryset(qs, user, warehouse_fields=warehouse_fields)
+        if warehouse_filter_id is not None:
+            if len(warehouse_fields) == 1:
+                qs = qs.filter(**{f"{warehouse_fields[0]}_id": warehouse_filter_id})
+            else:
+                # Transfers: include if either side matches
+                q = Q()
+                for field in warehouse_fields:
+                    q |= Q(**{f"{field}_id": warehouse_filter_id})
+                qs = qs.filter(q)
+        return qs.count()
+
+    backlog_counts['receipts'] = _pending_approval_count(Receipt, warehouse_fields=('warehouse',))
+    backlog_counts['deliveries'] = _pending_approval_count(DeliveryOrder, warehouse_fields=('warehouse',))
+    backlog_counts['returns'] = _pending_approval_count(ReturnOrder, warehouse_fields=('warehouse',))
+    backlog_counts['adjustments'] = _pending_approval_count(StockAdjustment, warehouse_fields=('warehouse',))
+    backlog_counts['transfers'] = _pending_approval_count(InternalTransfer, warehouse_fields=('warehouse', 'to_warehouse'))
+    backlog_counts['cycle_counts'] = _pending_approval_count(CycleCountTask, warehouse_fields=('warehouse',))
+    backlog_total = sum(backlog_counts.values())
+
+    if backlog_total > 0:
+        anomalies.append({
+            'id': 'pending_approvals',
+            'kind': 'approval_backlog',
+            'created_at': now_iso,
+            'actions': [
+                {'label': 'Receipts queue', 'href': '/receipts?status=waiting,ready'},
+                {'label': 'Deliveries queue', 'href': '/deliveries?status=waiting,ready'},
+                {'label': 'Transfers queue', 'href': '/transfers?status=waiting,ready'},
+            ],
+            'title': f'Approval backlog: {backlog_total} document(s) need approval',
+            'hint': (
+                f"Receipts {backlog_counts['receipts']}, Deliveries {backlog_counts['deliveries']}, "
+                f"Transfers {backlog_counts['transfers']}, Adjustments {backlog_counts['adjustments']}, "
+                f"Returns {backlog_counts['returns']}, Cycle counts {backlog_counts['cycle_counts']}."
+            ),
+            'severity': _severity_from_count(backlog_total),
+        })
+
+    # 2) Returns spike (volume anomaly)
+    last7_start = now - timedelta(days=7)
+    prev7_start = now - timedelta(days=14)
+    returns_qs = scope_queryset(ReturnOrder.objects.all(), user, warehouse_fields=('warehouse',))
+    if warehouse_filter_id is not None:
+        returns_qs = returns_qs.filter(warehouse_id=warehouse_filter_id)
+
+    last7 = returns_qs.filter(created_at__gte=last7_start).count()
+    prev7 = returns_qs.filter(created_at__gte=prev7_start, created_at__lt=last7_start).count()
+
+    # Trigger when signal is strong enough to matter.
+    if (prev7 == 0 and last7 >= 5) or (prev7 > 0 and last7 >= max(3, int(prev7 * 2))):
+        anomalies.append({
+            'id': 'returns_spike',
+            'kind': 'returns_spike',
+            'created_at': now_iso,
+            'actions': [
+                {'label': 'Review returns', 'href': '/returns'},
+            ],
+            'title': 'Returns spike detected',
+            'hint': f'{last7} return(s) in last 7 days vs {prev7} in the prior 7 days.',
+            'severity': 'High' if last7 >= 10 else 'Medium',
+        })
+
+    # 3) Cycle count variance cluster (data integrity signal)
+    variance_window_start = now - timedelta(days=14)
+    tasks_qs = scope_queryset(
+        CycleCountTask.objects.filter(completed_at__gte=variance_window_start),
+        user,
+        warehouse_fields=('warehouse',),
+    )
+    if warehouse_filter_id is not None:
+        tasks_qs = tasks_qs.filter(warehouse_id=warehouse_filter_id)
+
+    # We treat |counted - expected| >= 5 units as a meaningful variance.
+    variance_threshold = Decimal('5.00')
+    variance_count = (
+        CycleCountItem.objects.filter(task__in=tasks_qs)
+        .annotate(abs_variance=Abs(F('counted_quantity') - F('expected_quantity')))
+        .filter(abs_variance__gte=variance_threshold)
+        .count()
+    )
+
+    if variance_count > 0:
+        anomalies.append({
+            'id': 'cycle_count_variance',
+            'kind': 'cycle_count_variance',
+            'created_at': now_iso,
+            'actions': [
+                {'label': 'Review cycle counts', 'href': '/cycle-counts'},
+            ],
+            'title': 'Cycle count variance cluster',
+            'hint': f'{variance_count} line item(s) had variance ≥ {variance_threshold} in the last 14 days.',
+            'severity': _severity_from_count(variance_count),
+        })
+
+    # 4) Shipment SLA risk (deliveries open too long)
+    try:
+        sla_hours = int(request.query_params.get('sla_hours', 48))
+    except Exception:
+        sla_hours = 48
+    sla_hours = max(1, min(sla_hours, 168))
+
+    sla_cutoff = now - timedelta(hours=sla_hours)
+    open_deliveries_qs = scope_queryset(
+        DeliveryOrder.objects.filter(status__in=['waiting', 'ready'], created_at__lt=sla_cutoff),
+        user,
+        warehouse_fields=('warehouse',),
+    )
+    if warehouse_filter_id is not None:
+        open_deliveries_qs = open_deliveries_qs.filter(warehouse_id=warehouse_filter_id)
+
+    sla_risk_count = open_deliveries_qs.count()
+    if sla_risk_count > 0:
+        anomalies.append({
+            'id': 'delivery_sla_risk',
+            'kind': 'sla_risk',
+            'created_at': now_iso,
+            'title': f'Shipment SLA risk: {sla_risk_count} delivery(ies) open > {sla_hours}h',
+            'hint': 'Focus on oldest waiting/ready deliveries to protect customer service levels.',
+            'severity': _severity_from_count(sla_risk_count),
+            'actions': [
+                {'label': 'Deliveries queue', 'href': '/deliveries?status=waiting,ready'},
+            ],
+        })
+
+    # 5) High-value low stock (A-class style risk without ML)
+    stock_qs = _scoped_stock_items(request)
+    if warehouse_filter_id is not None:
+        stock_qs = stock_qs.filter(warehouse_id=warehouse_filter_id)
+
+    stock_by_product = stock_qs.values('product').annotate(total_quantity=Sum('quantity'))
+    stock_dict = {row['product']: (row['total_quantity'] or Decimal('0.00')) for row in stock_by_product}
+
+    price_qs = scope_queryset(
+        ReceiptItem.objects.all(),
+        user,
+        warehouse_fields=('receipt__warehouse',),
+    )
+    if warehouse_filter_id is not None:
+        price_qs = price_qs.filter(receipt__warehouse_id=warehouse_filter_id)
+
+    price_by_product = price_qs.values('product').annotate(avg_price=Avg('unit_price'))
+    price_dict = {row['product']: Decimal(row['avg_price'] or 0) for row in price_by_product}
+
+    products = list(Product.objects.filter(is_active=True).values('id', 'name', 'sku', 'reorder_level'))
+
+    product_value_rows = []
+    low_stock_high_value_rows = []
+    for p in products:
+        pid = p['id']
+        qty = Decimal(stock_dict.get(pid, Decimal('0.00')))
+        unit_price = Decimal(price_dict.get(pid, Decimal('0.00')))
+        total_value = qty * unit_price
+
+        product_value_rows.append((pid, total_value))
+
+        reorder_level = Decimal(p.get('reorder_level') or 0)
+        if qty <= reorder_level and total_value > 0:
+            # Store pid to enable fast membership checks.
+            low_stock_high_value_rows.append((pid, p['name'], p['sku'], qty, reorder_level, total_value))
+
+    product_value_rows.sort(key=lambda x: x[1], reverse=True)
+    top_n = max(1, int(len(product_value_rows) * 0.2))
+    top_ids = {pid for pid, _ in product_value_rows[:top_n]}
+
+    a_low_stock = [row for row in low_stock_high_value_rows if row[0] in top_ids]
+
+    if a_low_stock:
+        # Summarize top 3 for hint.
+        low_stock_high_value_rows.sort(key=lambda x: x[5], reverse=True)
+        top_items = low_stock_high_value_rows[:3]
+        top_hint = '; '.join(
+            [
+                f"{name} ({sku}) stock {qty} ≤ reorder {rl} (≈${float(val):,.0f})"
+                for _pid, name, sku, qty, rl, val in top_items
+            ]
+        )
+
+        anomalies.append({
+            'id': 'high_value_low_stock',
+            'kind': 'service_risk',
+            'created_at': now_iso,
+            'title': f'High-value low stock: {len(low_stock_high_value_rows)} SKU(s) below reorder level',
+            'hint': top_hint,
+            'severity': _severity_from_count(len(low_stock_high_value_rows)),
+            'actions': [
+                {'label': 'Open low stock list', 'href': '/products?filter=low_stock'},
+            ],
+        })
+
+    # 6) Allocation / data integrity issue: reserved > on-hand or negative stock
+    integrity_qs = _scoped_stock_items(request)
+    if warehouse_filter_id is not None:
+        integrity_qs = integrity_qs.filter(warehouse_id=warehouse_filter_id)
+
+    integrity_count = integrity_qs.filter(Q(quantity__lt=0) | Q(reserved_quantity__gt=F('quantity'))).count()
+    if integrity_count > 0:
+        anomalies.append({
+            'id': 'stock_integrity',
+            'kind': 'data_integrity',
+            'created_at': now_iso,
+            'title': f'Stock integrity issue: {integrity_count} item(s) have negative/over-reserved stock',
+            'hint': 'Investigate allocations, adjustments, and bin movements to restore reliable availability numbers.',
+            'severity': _severity_from_count(integrity_count),
+            'actions': [
+                {'label': 'Storage view', 'href': '/storage'},
+            ],
+        })
+
+    # 7) Stale "ready" documents (ops throughput / bottleneck signal)
+    stale_cutoff = now - timedelta(hours=24)
+
+    def _stale_ready_count(model, *, warehouse_fields):
+        qs = model.objects.filter(status='ready', completed_at__isnull=True, created_at__lt=stale_cutoff)
+        qs = scope_queryset(qs, user, warehouse_fields=warehouse_fields)
+        if warehouse_filter_id is not None:
+            if len(warehouse_fields) == 1:
+                qs = qs.filter(**{f"{warehouse_fields[0]}_id": warehouse_filter_id})
+            else:
+                q = Q()
+                for field in warehouse_fields:
+                    q |= Q(**{f"{field}_id": warehouse_filter_id})
+                qs = qs.filter(q)
+        return qs.count()
+
+    stale_counts = {
+        'receipts': _stale_ready_count(Receipt, warehouse_fields=('warehouse',)),
+        'deliveries': _stale_ready_count(DeliveryOrder, warehouse_fields=('warehouse',)),
+        'transfers': _stale_ready_count(InternalTransfer, warehouse_fields=('warehouse', 'to_warehouse')),
+        'returns': _stale_ready_count(ReturnOrder, warehouse_fields=('warehouse',)),
+        'adjustments': _stale_ready_count(StockAdjustment, warehouse_fields=('warehouse',)),
+        'cycle_counts': _stale_ready_count(CycleCountTask, warehouse_fields=('warehouse',)),
+    }
+    stale_total = sum(stale_counts.values())
+
+    if stale_total > 0:
+        anomalies.append({
+            'id': 'stale_ready_docs',
+            'kind': 'throughput_bottleneck',
+            'created_at': now_iso,
+            'title': f'Bottleneck: {stale_total} document(s) stuck in Ready > 24h',
+            'hint': (
+                f"Receipts {stale_counts['receipts']}, Deliveries {stale_counts['deliveries']}, "
+                f"Transfers {stale_counts['transfers']}, Returns {stale_counts['returns']}, "
+                f"Adjustments {stale_counts['adjustments']}, Cycle counts {stale_counts['cycle_counts']}."
+            ),
+            'severity': _severity_from_count(stale_total),
+            'actions': [
+                {'label': 'Receipts (Ready)', 'href': '/receipts?status=ready'},
+                {'label': 'Deliveries (Ready)', 'href': '/deliveries?status=ready'},
+            ],
+        })
+
+    # 5) Notification-backed anomalies (manual or scheduled pipeline)
+    notif_qs = Notification.objects.filter(notification_type='anomaly').filter(Q(user=user) | Q(user__isnull=True)).order_by('-created_at')
+    notif_qs = notif_qs[:10]
+
+    def _priority_to_severity(priority: str) -> str:
+        mapping = {
+            'critical': 'High',
+            'high': 'High',
+            'medium': 'Medium',
+            'low': 'Low',
+        }
+        return mapping.get((priority or '').lower(), 'Medium')
+
+    def _notification_in_scope(n: Notification) -> bool:
+        doc_type = (n.related_object_type or '').strip().lower()
+        if not doc_type or not n.related_object_id:
+            return True
+
+        # Only scope known warehouse-scoped document types.
+        try:
+            from operations.access import document_in_scope
+
+            mapped = {
+                'receipt': 'receipt',
+                'delivery': 'delivery',
+                'deliveryorder': 'delivery',
+                'return': 'return',
+                'returnorder': 'return',
+                'transfer': 'transfer',
+                'internaltransfer': 'transfer',
+                'adjustment': 'adjustment',
+                'stockadjustment': 'adjustment',
+                'cycle_count': 'cycle_count',
+                'cyclecounttask': 'cycle_count',
+            }.get(doc_type)
+            if not mapped:
+                return True
+
+            return bool(document_in_scope(user, mapped, int(n.related_object_id)))
+        except Exception:
+            return True
+
+    for n in notif_qs:
+        if not _notification_in_scope(n):
+            continue
+        anomalies.append({
+            'id': f'notif_{n.id}',
+            'kind': 'notification',
+            'created_at': (n.created_at.isoformat() if getattr(n, 'created_at', None) else now_iso),
+            'title': n.title,
+            'hint': (n.message or '')[:160],
+            'severity': _priority_to_severity(n.priority),
+        })
+
+    # Sort: newest first within each severity bucket, and High/Medium/Low.
+    severity_rank = {'High': 0, 'Medium': 1, 'Low': 2}
+    anomalies.sort(key=lambda x: x.get('created_at') or '', reverse=True)
+    anomalies.sort(key=lambda x: severity_rank.get(x.get('severity') or 'Medium', 1))
+
+    return Response(anomalies[:limit])
 
 
 @api_view(['GET'])
