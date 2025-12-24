@@ -4,11 +4,21 @@ import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { operationsService, InternalTransfer } from '@/lib/operations';
 import { productService, Warehouse } from '@/lib/products';
-import { Plus, CheckCircle, MessageSquare, Pencil } from 'lucide-react';
+import { Plus, CheckCircle, MessageSquare, Pencil, ArrowLeftRight } from 'lucide-react';
 import StatusEditModal from '@/components/StatusEditModal';
-import Link from 'next/link';
 import SavedViewToolbar from '@/components/SavedViewToolbar';
 import DocumentCollaborationPanel from '@/components/DocumentCollaborationPanel';
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  CardContent,
+  EmptyState,
+  LoadingState,
+  PageHeader,
+  Select,
+} from '@/components/ui';
 
 function TransfersPageContent() {
   const searchParams = useSearchParams();
@@ -125,139 +135,167 @@ function TransfersPageContent() {
     }
   };
 
+  const statusVariant = (
+    status: string,
+  ): 'neutral' | 'success' | 'warning' | 'danger' | 'info' => {
+    switch (status) {
+      case 'done':
+        return 'success';
+      case 'ready':
+        return 'info';
+      case 'waiting':
+        return 'warning';
+      case 'canceled':
+        return 'danger';
+      default:
+        return 'neutral';
+    }
+  };
+
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Internal Transfers</h1>
-            <Link
+      <div className="space-y-6 animate-fade-in">
+        <PageHeader
+          title="Internal Transfers"
+          description="Move stock between warehouses and validate transfer documents"
+          actions={
+            <ButtonLink
               href="/transfers/new"
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0"
+              leftIcon={<Plus size={18} />}
+              className="w-full sm:w-auto"
             >
-              <Plus size={20} />
               New Transfer
-            </Link>
-        </div>
+            </ButtonLink>
+          }
+        />
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center gap-4 mb-6">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 cursor-pointer"
-            >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="waiting">Waiting</option>
-              <option value="ready">Ready</option>
-              <option value="done">Done</option>
-              <option value="canceled">Canceled</option>
-            </select>
-            <select
-              value={warehouseFilter}
-              onChange={(e) => setWarehouseFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 cursor-pointer"
-            >
-              <option value="">All Warehouses</option>
-              {warehouses.map((wh) => (
-                <option key={wh.id} value={wh.id}>
-                  {wh.name} ({wh.code})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <SavedViewToolbar
-            pageKey="transfers"
-            currentFilters={{ status: statusFilter || null, warehouse: warehouseFilter || null }}
-            onApply={handleApplySavedFilters}
-            helperText="Switch between transfer queues without re-filtering."
-            className="mb-6"
-          />
-
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <Card className="hover-lift">
+          <CardContent className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex-1 sm:flex-none">
+                <Select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  aria-label="Filter by status"
+                >
+                  <option value="">All Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="waiting">Waiting</option>
+                  <option value="ready">Ready</option>
+                  <option value="done">Done</option>
+                  <option value="canceled">Canceled</option>
+                </Select>
+              </div>
+              <div className="flex-1 sm:flex-none">
+                <Select
+                  value={warehouseFilter}
+                  onChange={(e) => setWarehouseFilter(e.target.value)}
+                  aria-label="Filter by warehouse"
+                >
+                  <option value="">All Warehouses</option>
+                  {warehouses.map((wh) => (
+                    <option key={wh.id} value={wh.id}>
+                      {wh.name} ({wh.code})
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Document #</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">From</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">To</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Status</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Created</th>
-                    <th className="text-right p-3 text-sm font-medium text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transfers.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center p-8 text-gray-500">
-                        No transfers found
-                      </td>
+
+            <SavedViewToolbar
+              pageKey="transfers"
+              currentFilters={{ status: statusFilter || null, warehouse: warehouseFilter || null }}
+              onApply={handleApplySavedFilters}
+              helperText="Switch between transfer queues without re-filtering."
+            />
+
+            {loading ? (
+              <LoadingState label="Loading transfers…" />
+            ) : transfers.length === 0 ? (
+              <EmptyState
+                icon={<ArrowLeftRight size={32} className="text-gray-400 dark:text-gray-500" />}
+                title="No transfers found"
+                description="Create your first transfer to move stock between warehouses."
+                action={
+                  <ButtonLink href="/transfers/new" leftIcon={<Plus size={16} />} size="sm">
+                    New Transfer
+                  </ButtonLink>
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto custom-scrollbar rounded-xl border border-gray-100 dark:border-gray-800">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/40">
+                      <th className="text-left p-3 text-xs font-semibold text-gray-700 dark:text-gray-300">Document #</th>
+                      <th className="text-left p-3 text-xs font-semibold text-gray-700 dark:text-gray-300">From</th>
+                      <th className="text-left p-3 text-xs font-semibold text-gray-700 dark:text-gray-300">To</th>
+                      <th className="text-left p-3 text-xs font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                      <th className="text-left p-3 text-xs font-semibold text-gray-700 dark:text-gray-300">Created</th>
+                      <th className="text-right p-3 text-xs font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                     </tr>
-                  ) : (
-                    transfers.map((transfer) => (
-                      <tr key={transfer.id} className="border-b hover:bg-gray-50 hover:shadow-sm transition-all duration-200 cursor-pointer">
-                        <td className="p-3 font-medium">{transfer.document_number}</td>
-                        <td className="p-3">{transfer.warehouse_name}</td>
-                        <td className="p-3">{transfer.to_warehouse_name}</td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-1 text-xs rounded ${
-                              transfer.status === 'done'
-                                ? 'bg-green-100 text-green-800'
-                                : transfer.status === 'ready'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {transfer.status}
-                          </span>
+                  </thead>
+                  <tbody>
+                    {transfers.map((transfer) => (
+                      <tr
+                        key={transfer.id}
+                        className="border-b border-gray-100 dark:border-gray-800 hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors"
+                      >
+                        <td className="p-3 font-semibold text-gray-900 dark:text-gray-100">
+                          {transfer.document_number}
                         </td>
-                        <td className="p-3 text-gray-600">
+                        <td className="p-3 text-sm text-gray-700 dark:text-gray-200">{transfer.warehouse_name}</td>
+                        <td className="p-3 text-sm text-gray-700 dark:text-gray-200">{transfer.to_warehouse_name}</td>
+                        <td className="p-3">
+                          <Badge variant={statusVariant(transfer.status)}>{transfer.status}</Badge>
+                        </td>
+                        <td className="p-3 text-sm text-gray-600 dark:text-gray-400">
                           {new Date(transfer.created_at).toLocaleDateString()}
                         </td>
                         <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() =>
-                                setEditDoc({ id: transfer.id, number: transfer.document_number, status: transfer.status })
+                                setEditDoc({
+                                  id: transfer.id,
+                                  number: transfer.document_number,
+                                  status: transfer.status,
+                                })
                               }
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
                               title="Edit status"
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <button
+                              aria-label="Edit status"
+                              leftIcon={<Pencil size={16} />}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => setCollabDoc({ id: transfer.id, number: transfer.document_number })}
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
                               title="Open collaboration panel"
-                            >
-                              <MessageSquare size={16} />
-                            </button>
+                              aria-label="Open collaboration panel"
+                              leftIcon={<MessageSquare size={16} />}
+                            />
                             {transfer.status === 'ready' && (
-                              <button
+                              <Button
+                                size="sm"
+                                variant="primary"
                                 onClick={() => handleValidate(transfer.id)}
-                                className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm"
+                                leftIcon={<CheckCircle size={16} />}
                               >
-                                <CheckCircle size={16} />
                                 Validate
-                              </button>
+                              </Button>
                             )}
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
       <StatusEditModal
         open={!!editDoc}
@@ -281,13 +319,7 @@ function TransfersPageContent() {
 
 export default function TransfersPage() {
   return (
-    <Suspense fallback={
-      <>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-        </div>
-      </>
-    }>
+    <Suspense fallback={<LoadingState label="Loading transfers…" />}>
       <TransfersPageContent />
     </Suspense>
   );

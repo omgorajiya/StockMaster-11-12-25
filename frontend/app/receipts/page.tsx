@@ -110,44 +110,53 @@ function ReceiptsPageContent() {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-6 animate-fade-in">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Receipts</h1>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">Receipts</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage incoming inventory from suppliers</p>
+          </div>
           <Link
             href="/receipts/new"
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm sm:text-base w-full sm:w-auto justify-center"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl hover:from-primary-700 hover:to-primary-800 hover:shadow-xl hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all duration-300 active:translate-y-0 active:scale-95 text-sm sm:text-base w-full sm:w-auto justify-center font-semibold"
           >
             <Plus size={18} className="sm:w-5 sm:h-5" />
             <span>New Receipt</span>
           </Link>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 p-4 sm:p-6 hover-lift">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mb-6">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 cursor-pointer text-sm sm:text-base"
-            >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="waiting">Waiting</option>
-              <option value="ready">Ready</option>
-              <option value="done">Done</option>
-              <option value="canceled">Canceled</option>
-            </select>
-            <select
-              value={warehouseFilter}
-              onChange={(e) => setWarehouseFilter(e.target.value)}
-              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 cursor-pointer text-sm sm:text-base"
-            >
-              <option value="">All Warehouses</option>
-              {warehouses.map((wh) => (
-                <option key={wh.id} value={wh.id}>
-                  {wh.name} ({wh.code})
-                </option>
-              ))}
-            </select>
+            <div className="relative flex-1 sm:flex-none">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer text-sm sm:text-base bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100 appearance-none"
+              >
+                <option value="">All Status</option>
+                <option value="draft">Draft</option>
+                <option value="waiting">Waiting</option>
+                <option value="ready">Ready</option>
+                <option value="done">Done</option>
+                <option value="canceled">Canceled</option>
+              </select>
+              <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+            <div className="relative flex-1 sm:flex-none">
+              <select
+                value={warehouseFilter}
+                onChange={(e) => setWarehouseFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer text-sm sm:text-base bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100 appearance-none"
+              >
+                <option value="">All Warehouses</option>
+                {warehouses.map((wh) => (
+                  <option key={wh.id} value={wh.id}>
+                    {wh.name} ({wh.code})
+                  </option>
+                ))}
+              </select>
+              <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
           </div>
 
           <SavedViewToolbar
@@ -159,65 +168,84 @@ function ReceiptsPageContent() {
           />
 
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+            <div className="flex flex-col items-center justify-center h-64 py-12">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary-200 border-t-primary-600"></div>
+                <Receipt size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary-600" />
+              </div>
+              <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading receipts...</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto custom-scrollbar rounded-xl">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Document #</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Supplier</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Warehouse</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Status</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700">Created</th>
-                    <th className="text-right p-3 text-sm font-medium text-gray-700">Actions</th>
+                  <tr className="border-b-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Document #</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Supplier</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Warehouse</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Created</th>
+                    <th className="text-right p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {receipts.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center p-8 text-gray-500">
-                        No receipts found
+                      <td colSpan={6} className="text-center p-12">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full">
+                            <Receipt size={48} className="text-gray-400 dark:text-gray-500" />
+                          </div>
+                          <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No receipts found</p>
+                          <p className="text-gray-400 dark:text-gray-500 text-sm">Create your first receipt to start tracking inventory</p>
+                          <Link
+                            href="/receipts/new"
+                            className="mt-2 flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm font-semibold"
+                          >
+                            <Plus size={16} />
+                            New Receipt
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ) : (
                     receipts.map((receipt) => (
-                      <tr key={receipt.id} className="border-b hover:bg-gray-50 hover:shadow-sm transition-all duration-200 cursor-pointer">
-                        <td className="p-3 font-medium">{receipt.document_number}</td>
-                        <td className="p-3">{receipt.supplier}</td>
-                        <td className="p-3">{receipt.warehouse_name}</td>
-                        <td className="p-3">
+                      <tr key={receipt.id} className="border-b border-gray-200 dark:border-gray-800 hover:bg-gradient-to-r hover:from-primary-50/50 hover:to-blue-50/50 dark:hover:from-primary-900/10 dark:hover:to-blue-900/10 transition-all duration-200 group">
+                        <td className="p-3 sm:p-4 font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors duration-200">{receipt.document_number}</td>
+                        <td className="p-3 sm:p-4 text-gray-700 dark:text-gray-300">{receipt.supplier}</td>
+                        <td className="p-3 sm:p-4 text-gray-700 dark:text-gray-300">{receipt.warehouse_name}</td>
+                        <td className="p-3 sm:p-4">
                           <span
-                            className={`px-2 py-1 text-xs rounded ${
+                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
                               receipt.status === 'done'
-                                ? 'bg-green-100 text-green-800'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : receipt.status === 'ready'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-800'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                : receipt.status === 'waiting'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
                             }`}
                           >
                             {receipt.status}
                           </span>
                         </td>
-                        <td className="p-3 text-gray-600">
+                        <td className="p-3 sm:p-4 text-sm text-gray-600 dark:text-gray-400">
                           {new Date(receipt.created_at).toLocaleDateString()}
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 sm:p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() =>
                                 setEditDoc({ id: receipt.id, number: receipt.document_number, status: receipt.status })
                               }
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                               title="Edit status"
                             >
                               <Pencil size={16} />
                             </button>
                             <button
                               onClick={() => setCollabDoc({ id: receipt.id, number: receipt.document_number })}
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                               title="Open collaboration panel"
                             >
                               <MessageSquare size={16} />
@@ -225,10 +253,10 @@ function ReceiptsPageContent() {
                             {receipt.status === 'ready' && (
                               <button
                                 onClick={() => handleValidate(receipt.id)}
-                                className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 hover:shadow-lg hover:shadow-green-600/30 hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-xs sm:text-sm font-semibold"
                               >
                                 <CheckCircle size={16} />
-                                Validate
+                                <span className="hidden sm:inline">Validate</span>
                               </button>
                             )}
                           </div>

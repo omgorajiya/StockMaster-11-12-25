@@ -81,6 +81,16 @@ export interface InventoryValueByHealth {
   total_value: number;
 }
 
+export interface AnomalyFeedItem {
+  id: string | number;
+  title: string;
+  hint: string;
+  severity: 'High' | 'Medium' | 'Low';
+  kind?: string;
+  created_at?: string;
+  actions?: Array<{ label: string; href: string }>;
+}
+
 export const dashboardService = {
   async getKPIs(): Promise<DashboardKPIs> {
     const response = await api.get('/dashboard/kpis/');
@@ -114,6 +124,15 @@ export const dashboardService = {
       params.warehouse_id = warehouseId;
     }
     const response = await api.get('/dashboard/value-by-health/', { params });
+    return response.data;
+  },
+
+  async getAnomalyFeed(warehouseId?: number, limit: number = 10): Promise<AnomalyFeedItem[]> {
+    const params: any = { limit };
+    if (warehouseId) {
+      params.warehouse_id = warehouseId;
+    }
+    const response = await api.get('/dashboard/anomalies/', { params });
     return response.data;
   },
 };

@@ -100,24 +100,27 @@ export default function ReturnsPage() {
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Returns</h1>
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">Returns</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage customer returns and RMA processes</p>
+          </div>
           <Link
             href="/returns/new"
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl hover:from-primary-700 hover:to-primary-800 hover:shadow-xl hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all duration-300 active:translate-y-0 active:scale-95 text-sm sm:text-base w-full sm:w-auto justify-center font-semibold"
           >
-            <Plus size={20} />
-            New Return
+            <Plus size={18} className="sm:w-5 sm:h-5" />
+            <span>New Return</span>
           </Link>
         </div>
 
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
-          <div className="flex items-center gap-4 mb-6">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 p-4 sm:p-6 hover-lift">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mb-6">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer text-sm sm:text-base bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Status</option>
               <option value="draft">Draft</option>
@@ -129,7 +132,7 @@ export default function ReturnsPage() {
             <select
               value={warehouseFilter}
               onChange={(e) => setWarehouseFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 hover:border-gray-400 dark:hover:border-gray-600 cursor-pointer text-sm sm:text-base bg-transparent dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Warehouses</option>
               {warehouses.map((wh) => (
@@ -149,20 +152,24 @@ export default function ReturnsPage() {
           />
 
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+            <div className="flex flex-col items-center justify-center h-64 py-12">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary-200 border-t-primary-600"></div>
+                <RotateCcw size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary-600" />
+              </div>
+              <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading returns...</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto custom-scrollbar rounded-xl">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b bg-gray-50 dark:bg-gray-800">
-                    <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Document #</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Warehouse</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Disposition</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Status</th>
-                    <th className="text-left p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Created</th>
-                    <th className="text-right p-3 text-sm font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                  <tr className="border-b-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Document #</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Warehouse</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Disposition</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Created</th>
+                    <th className="text-right p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,12 +177,14 @@ export default function ReturnsPage() {
                     <tr>
                       <td colSpan={6} className="text-center p-12">
                         <div className="flex flex-col items-center gap-3">
-                          <RotateCcw size={48} className="text-gray-400" />
+                          <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full">
+                            <RotateCcw size={48} className="text-gray-400 dark:text-gray-500" />
+                          </div>
                           <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No returns found</p>
                           <p className="text-gray-400 dark:text-gray-500 text-sm">Create your first return order to get started</p>
                           <Link
                             href="/returns/new"
-                            className="mt-2 flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0"
+                            className="mt-2 flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm font-semibold"
                           >
                             <Plus size={18} />
                             New Return
@@ -185,40 +194,46 @@ export default function ReturnsPage() {
                     </tr>
                   ) : (
                     returns.map((ret) => (
-                      <tr key={ret.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800 hover:shadow-sm transition-all duration-200">
-                        <td className="p-3 font-medium">{ret.document_number}</td>
-                        <td className="p-3">{ret.warehouse_name}</td>
-                        <td className="p-3 capitalize">{ret.disposition}</td>
-                        <td className="p-3">
+                      <tr key={ret.id} className="border-b border-gray-200 dark:border-gray-800 hover:bg-gradient-to-r hover:from-primary-50/50 hover:to-blue-50/50 dark:hover:from-primary-900/10 dark:hover:to-blue-900/10 transition-all duration-200 group">
+                        <td className="p-3 sm:p-4 font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors duration-200">{ret.document_number}</td>
+                        <td className="p-3 sm:p-4 text-gray-700 dark:text-gray-300">{ret.warehouse_name}</td>
+                        <td className="p-3 sm:p-4">
+                          <span className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                            {ret.disposition}
+                          </span>
+                        </td>
+                        <td className="p-3 sm:p-4">
                           <span
-                            className={`px-2 py-1 text-xs rounded ${
+                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
                               ret.status === 'done'
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : ret.status === 'ready'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
-                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                : ret.status === 'waiting'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
                             }`}
                           >
                             {ret.status}
                           </span>
                         </td>
-                        <td className="p-3 text-gray-600">
+                        <td className="p-3 sm:p-4 text-sm text-gray-600 dark:text-gray-400">
                           {new Date(ret.created_at).toLocaleDateString()}
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 sm:p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() =>
                                 setEditDoc({ id: ret.id, number: ret.document_number, status: ret.status })
                               }
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                               title="Edit status"
                             >
                               <Pencil size={16} />
                             </button>
                             <button
                               onClick={() => setCollabDoc({ id: ret.id, number: ret.document_number })}
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 dark:text-gray-300 dark:hover:text-primary-200 dark:hover:bg-primary-500/15"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                               title="Open collaboration panel"
                             >
                               <MessageSquare size={16} />
@@ -226,10 +241,10 @@ export default function ReturnsPage() {
                             {ret.status === 'ready' && (
                               <button
                                 onClick={() => handleValidate(ret.id)}
-                                className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 hover:shadow-lg hover:shadow-green-600/30 hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-xs sm:text-sm font-semibold"
                               >
                                 <CheckCircle size={16} />
-                                Validate
+                                <span className="hidden sm:inline">Validate</span>
                               </button>
                             )}
                           </div>

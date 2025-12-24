@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { dashboardService, DashboardKPIs, RecentActivity, LowStockProduct, MovementValueTrend, InventoryValueByHealth } from '@/lib/dashboard';
+import { formatDistanceToNow } from 'date-fns';
+import { dashboardService, DashboardKPIs, RecentActivity, LowStockProduct, MovementValueTrend, InventoryValueByHealth, AnomalyFeedItem } from '@/lib/dashboard';
 import { productService, Warehouse } from '@/lib/products';
 import {
   ResponsiveContainer,
@@ -43,6 +44,9 @@ export default function DashboardPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [anomalyFeed, setAnomalyFeed] = useState<AnomalyFeedItem[]>([]);
+  const [anomalyLoading, setAnomalyLoading] = useState(false);
+  const [anomalyLastUpdatedAt, setAnomalyLastUpdatedAt] = useState<Date | null>(null);
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
@@ -65,18 +69,20 @@ export default function DashboardPage() {
 
   const loadDashboardData = async () => {
     try {
-      const [kpisData, activitiesData, lowStockData, movementTrendData, valueByHealthData] = await Promise.all([
+      const [kpisData, activitiesData, lowStockData, movementTrendData, valueByHealthData, anomalyData] = await Promise.all([
         dashboardService.getKPIs(),
         dashboardService.getRecentActivities(5),
         dashboardService.getLowStockProducts(),
         dashboardService.getMovementValueTrend(timeRange, selectedWarehouse, showStatusBreakdown),
         dashboardService.getInventoryValueByHealth(selectedWarehouse),
+        dashboardService.getAnomalyFeed(selectedWarehouse, 10),
       ]);
       setKPIs(kpisData);
       setActivities(activitiesData);
       setLowStock(lowStockData);
       setMovementTrend(movementTrendData.trend);
       setValueByHealth(valueByHealthData);
+      setAnomalyFeed(Array.isArray(anomalyData) ? anomalyData : []);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -94,7 +100,31 @@ export default function DashboardPage() {
     if (selectedWarehouse !== undefined) {
       loadValueByHealth();
     }
+    loadAnomalyFeed();
   }, [selectedWarehouse]);
+
+  // Keep the anomaly feed feeling "live" without requiring websockets.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      loadAnomalyFeed();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [selectedWarehouse]);
+
+  const loadAnomalyFeed = async () => {
+    try {
+      setAnomalyLoading(true);
+      const data = await dashboardService.getAnomalyFeed(selectedWarehouse, 10);
+      setAnomalyFeed(Array.isArray(data) ? data : []);
+      setAnomalyLastUpdatedAt(new Date());
+    } catch (error) {
+      console.error('Failed to load anomaly feed:', error);
+      setAnomalyFeed([]);
+    } finally {
+      setAnomalyLoading(false);
+    }
+  };
 
   const loadMovementTrend = async () => {
     try {
@@ -186,35 +216,6 @@ export default function DashboardPage() {
     []
   );
 
-  const anomalyFeed = useMemo(
-    () => [
-      {
-        id: 1,
-        title: 'Returns spike on SKU cluster R‑12',
-        hint: 'Likely labeling or description mismatch',
-        severity: 'High',
-      },
-      {
-        id: 2,
-        title: 'Pick time anomaly in Zone B',
-        hint: 'Travel distance and congestion above normal baseline',
-        severity: 'Medium',
-      },
-      {
-        id: 3,
-        title: 'Unusual transfer pattern between WH‑01 and WH‑03',
-        hint: 'Potential re‑slotting opportunity',
-        severity: 'Medium',
-      },
-      {
-        id: 4,
-        title: 'Cycle count variance cluster in A‑rack',
-        hint: 'Consider focused audit on A‑03 to A‑07',
-        severity: 'Low',
-      },
-    ],
-    []
-  );
 
   if (loading) {
     return (
@@ -978,36 +979,82 @@ export default function DashboardPage() {
 
         {/* Dynamic Anomaly Detection Feed – positioned at the bottom of the dashboard */}
         <div className="bg-white rounded-2xl shadow border border-slate-100/80 p-6">
-          <div className="mb-3 flex items-center gap-2">
-            <AlertTriangle size={18} className="text-amber-500" />
-            <h2 className="text-sm font-semibold text-gray-900">Dynamic Anomaly Detection Feed</h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-amber-500" />
+              <h2 className="text-sm font-semibold text-gray-900">Dynamic Anomaly Detection Feed</h2>
+              {anomalyLastUpdatedAt && (
+                <span className="text-[11px] text-slate-500">
+                  Updated {formatDistanceToNow(anomalyLastUpdatedAt, { addSuffix: true })}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={loadAnomalyFeed}
+              disabled={anomalyLoading}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Refresh
+            </button>
           </div>
-          <div className="space-y-2">
-            {anomalyFeed.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold">{item.title}</p>
-                  <span
-                    className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      item.severity === 'High'
-                        ? 'bg-rose-100 text-rose-700'
-                        : item.severity === 'Medium'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                    }`}
+          {anomalyLoading ? (
+            <p className="text-xs text-slate-500">Loading anomalies…</p>
+          ) : anomalyFeed.length === 0 ? (
+            <p className="text-xs text-slate-500">No anomalies detected for your current scope.</p>
+          ) : (
+            <div className="space-y-2">
+              {anomalyFeed.map((item) => {
+                const timeLabel = item.created_at
+                  ? formatDistanceToNow(new Date(item.created_at), { addSuffix: true })
+                  : undefined;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"
                   >
-                    {item.severity}
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] opacity-80">{item.hint}</p>
-              </div>
-            ))}
-          </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold">{item.title}</p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-amber-900/70">
+                          {item.kind && <span className="rounded-full bg-white/70 px-2 py-0.5">{item.kind.replaceAll('_', ' ')}</span>}
+                          {timeLabel && <span>{timeLabel}</span>}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          item.severity === 'High'
+                            ? 'bg-rose-100 text-rose-700'
+                            : item.severity === 'Medium'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {item.severity}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] opacity-80">{item.hint}</p>
+
+                    {Array.isArray(item.actions) && item.actions.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {item.actions.slice(0, 3).map((a) => (
+                          <Link
+                            key={`${item.id}-${a.href}-${a.label}`}
+                            href={a.href}
+                            className="rounded-full bg-white/80 px-3 py-1 text-[10px] font-semibold text-amber-900 hover:bg-white"
+                          >
+                            {a.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <p className="mt-2 text-[11px] text-amber-700/80">
-            In a full deployment this feed would be powered by anomaly detection over your event and movement streams.
+            Powered by warehouse-scoped, explainable rules (and optional anomaly notifications).
           </p>
         </div>
       </div>

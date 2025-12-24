@@ -705,7 +705,7 @@ export default function NewDeliveryPage() {
             </div>
 
             {items.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No items added. Click "Add Item" to start.</p>
+              <p className="text-gray-500 text-center py-8">No items added. Click &quot;Add Item&quot; to start.</p>
             ) : (
               <div className="space-y-4">
                 {items.map((item, index) => (

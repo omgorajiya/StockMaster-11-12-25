@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { productService, Warehouse } from '@/lib/products';
 import { notificationService, NotificationJobStatus } from '@/lib/notifications';
-import { Plus, Edit, Trash2, RefreshCw, CheckCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, RefreshCw, CheckCircle, Package } from 'lucide-react';
 import { showToast } from '@/lib/toast';
 
 export default function SettingsPage() {
@@ -72,30 +72,45 @@ export default function SettingsPage() {
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage your warehouses and system configuration</p>
+          </div>
           <button
             onClick={() => {
               setShowForm(true);
               setEditingWarehouse(null);
               setFormData({ name: '', code: '', address: '' });
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl hover:from-primary-700 hover:to-primary-800 hover:shadow-xl hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all duration-300 active:translate-y-0 active:scale-95 text-sm sm:text-base w-full sm:w-auto justify-center font-semibold"
           >
-            <Plus size={20} />
-            Add Warehouse
+            <Plus size={18} className="sm:w-5 sm:h-5" />
+            <span>Add Warehouse</span>
           </button>
         </div>
 
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Warehouse Management</h2>
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 p-4 sm:p-6 hover-lift">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+              <Package size={24} className="text-primary-600 dark:text-primary-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Warehouse Management</h2>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Configure and manage your warehouse locations</p>
+            </div>
+          </div>
 
           {showForm && (
-            <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <form onSubmit={handleSubmit} className="mb-6 p-5 bg-gradient-to-br from-gray-50 via-blue-50/20 to-primary-50/10 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 rounded-2xl border-2 border-primary-200 dark:border-primary-800 animate-scale-in">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                {editingWarehouse ? <Edit size={20} /> : <Plus size={20} />}
+                {editingWarehouse ? 'Edit Warehouse' : 'New Warehouse'}
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     Warehouse Name *
                   </label>
                   <input
@@ -103,11 +118,12 @@ export default function SettingsPage() {
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-transparent"
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
+                    placeholder="e.g., Main Warehouse"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     Warehouse Code *
                   </label>
                   <input
@@ -115,27 +131,37 @@ export default function SettingsPage() {
                     required
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-transparent"
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 uppercase"
+                    placeholder="e.g., WH-001"
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     Address
                   </label>
                   <textarea
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-transparent"
+                    className="w-full px-4 py-2.5 border-2 border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 resize-none"
+                    placeholder="Enter warehouse address..."
                   />
                 </div>
               </div>
-              <div className="flex gap-2 mt-4">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-5">
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0"
+                  disabled={loading}
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl hover:from-primary-700 hover:to-primary-800 hover:shadow-lg hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 active:scale-95 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingWarehouse ? 'Update' : 'Create'}
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      {editingWarehouse ? 'Updating...' : 'Creating...'}
+                    </span>
+                  ) : (
+                    editingWarehouse ? 'Update Warehouse' : 'Create Warehouse'
+                  )}
                 </button>
                 <button
                   type="button"
@@ -144,7 +170,7 @@ export default function SettingsPage() {
                     setEditingWarehouse(null);
                     setFormData({ name: '', code: '', address: '' });
                   }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-100 rounded-lg hover:bg-gray-300 hover:shadow-sm transition-all duration-200"
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-100 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 hover:shadow-sm transition-all duration-200 font-semibold"
                 >
                   Cancel
                 </button>
@@ -152,54 +178,75 @@ export default function SettingsPage() {
             </form>
           )}
 
-          {loading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          {loading && !showForm ? (
+            <div className="flex flex-col items-center justify-center h-48 py-12">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary-200 border-t-primary-600"></div>
+                <Package size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary-600" />
+              </div>
+              <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading warehouses...</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto custom-scrollbar rounded-xl">
               <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-800">
+                <thead className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-800/50">
                   <tr>
-                    <th className="text-left p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Name</th>
-                    <th className="text-left p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Code</th>
-                    <th className="text-left p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Address</th>
-                    <th className="text-left p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
-                    <th className="text-right p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Name</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Code</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Address</th>
+                    <th className="text-left p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                    <th className="text-right p-3 sm:p-4 text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {warehouses.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center p-8 text-gray-500">
-                        No warehouses found. Create one to get started.
+                      <td colSpan={5} className="text-center p-12">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full">
+                            <Package size={48} className="text-gray-400 dark:text-gray-500" />
+                          </div>
+                          <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No warehouses found</p>
+                          <p className="text-gray-400 dark:text-gray-500 text-sm">Create your first warehouse to get started</p>
+                          <button
+                            onClick={() => {
+                              setShowForm(true);
+                              setEditingWarehouse(null);
+                              setFormData({ name: '', code: '', address: '' });
+                            }}
+                            className="mt-2 flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:translate-y-0 text-sm font-semibold"
+                          >
+                            <Plus size={16} />
+                            Add Warehouse
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ) : (
                     warehouses.map((warehouse) => (
                       <tr
                         key={warehouse.id}
-                        className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 hover:shadow-sm transition-all duration-200 cursor-pointer"
+                        className="border-b border-gray-200 dark:border-gray-800 hover:bg-gradient-to-r hover:from-primary-50/50 hover:to-blue-50/50 dark:hover:from-primary-900/10 dark:hover:to-blue-900/10 transition-all duration-200 group"
                       >
-                        <td className="p-3 font-medium text-gray-900 dark:text-gray-100">{warehouse.name}</td>
-                        <td className="p-3 text-gray-600 dark:text-gray-300 font-mono text-sm">{warehouse.code}</td>
-                        <td className="p-3 text-gray-600 dark:text-gray-300 text-sm">{warehouse.address || '-'}</td>
-                        <td className="p-3">
+                        <td className="p-3 sm:p-4 font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors duration-200">{warehouse.name}</td>
+                        <td className="p-3 sm:p-4 text-gray-600 dark:text-gray-300 font-mono text-sm bg-gray-50 dark:bg-gray-800/50">{warehouse.code}</td>
+                        <td className="p-3 sm:p-4 text-gray-600 dark:text-gray-300 text-sm max-w-xs truncate">{warehouse.address || '-'}</td>
+                        <td className="p-3 sm:p-4">
                           <span
-                            className={`px-2 py-1 text-xs rounded ${
+                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
                               warehouse.is_active
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-gray-100 text-gray-800'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
                             }`}
                           >
                             {warehouse.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 sm:p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => handleEdit(warehouse)}
-                              className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 hover:scale-110"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                               title="Edit"
                             >
                               <Edit size={18} />
@@ -215,7 +262,7 @@ export default function SettingsPage() {
                                   showToast.error(error.response?.data?.error || 'Failed to delete warehouse');
                                 }
                               }}
-                              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 hover:scale-110"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                               title="Delete"
                             >
                               <Trash2 size={18} />
